@@ -1,0 +1,18 @@
+# Banco local opcional, na mesma versão do servidor (Percona 5.7), para trabalhar sem internet.
+# Depois de subir: npm run migrate && npm run seed
+services:
+  mysql:
+    image: percona/percona-server:5.7
+    container_name: konektron-research-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: pesquisa_dev
+      MYSQL_USER: konektron
+      MYSQL_PASSWORD: troque_esta_senha
+    command: ['--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci', '--sql-mode=ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION']
+    ports:
+      - '3306:3306'
+    volumes:
+      - mysqldata:/var/lib/mysql
+volumes:
+  mysqldata:

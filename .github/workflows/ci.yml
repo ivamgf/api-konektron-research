@@ -1,0 +1,34 @@
+name: CI
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # Os testes não acessam banco nem SMTP, mas src/config/env.ts exige estas variáveis.
+    env:
+      NODE_ENV: test
+      LOG_LEVEL: warn
+      DB_HOST: localhost
+      DB_NAME: pesquisa_test
+      DB_USER: ci
+      JWT_SECRET: ci-test-secret-nao-usar-em-producao-0123456789abcdef
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      # docs/openapi.json precisa refletir as rotas (gere com npm run docs:openapi)
+      - run: npm run docs:check
+      # mesmo passo do heroku-postbuild: baixa o fixie-wrench e confere o SHA-256
+      - name: Instalador do fixie-wrench
+        run: |
+          bash -n bin/*.sh
+          bash bin/install-fixie-wrench.sh
+          test -x bin/fixie-wrench

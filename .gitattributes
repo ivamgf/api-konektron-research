@@ -1,0 +1,5 @@
+# Scripts executados no Heroku/Linux: sempre LF, mesmo com core.autocrlf=true no Windows
+* text=auto eol=lf
+*.sh text eol=lf
+Procfile text eol=lf
+Aptfile text eol=lf

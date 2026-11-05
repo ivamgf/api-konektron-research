@@ -1,0 +1,311 @@
+import { db, json } from '#database/connection.ts';
+import { logger } from '#utils/logger.ts';
+import { uuid } from '#utils/tokens.ts';
+import { limparDoi, normalizarTitulo } from '#utils/normalize.ts';
+import { referenciaApa, referenciaNbr } from '#utils/referencias.ts';
+import { lerArquivo, salvarArquivo } from '#services/arquivos.ts';
+import { storage } from '#services/storage/index.ts';
+import { notificar } from '#services/notificacoes.ts';
+import { htmlParaPdf, esc, ESTILO } from '#pdf/render.ts';
+import { htmlProtocolo } from '#pdf/protocolo.ts';
+import { protocoloCompleto } from '#modules/protocolo/protocolo.service.ts';
+import { painel } from '#modules/revisoes/revisoes.service.ts';
+import { fluxogramaSvg } from '#modules/revisoes/fluxograma.ts';
+import { detectarDuplicados } from '#modules/documentos/duplicados.ts';
+import { lerArquivoDeBusca } from './parsers.ts';
+import type { Tarefa } from '#services/fila.ts';
+
+type Handler = (t: Tarefa) => Promise<Record<string, unknown> | void>;
+
+const carimbo = () => new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+const salvarResultado = (t: Tarefa, resultado: Record<string, unknown>) =>
+  db('filaTarefa').where({ id: t.id }).update({ payload: json({ ...t.payload, resultado }) });
+
+// ------------------------------------------------ importar-busca (RF25, UC07)
+const importarBusca: Handler = async (t) => {
+  const busca = await db('busca as b').join('revisao as r', 'r.id', 'b.revisaoId').where('b.id', t.payload.buscaId).first('b.*', 'r.projetoId');
+  if (!busca?.arquivoId) return;
+  await db('busca').where({ id: busca.id }).update({ statusImportacao: 'PROCESSANDO' });
+  try {
+    const { dados, arquivo } = await lerArquivo(busca.arquivoId);
+    const { registros, erros } = await lerArquivoDeBusca(arquivo.nomeOriginal, dados);
+    const tipos = Object.fromEntries((await db('tipoDocumento').select('id', 'nome')).map((x: any) => [x.nome, x.id]));
+    const idiomas = await db('idioma').select('id', 'codigo', 'nome');
+    const idiomaId = (v?: string | null) => {
+      const s = (v ?? '').toLowerCase();
+      return idiomas.find((i: any) => i.codigo === s.slice(0, 2) || i.nome.toLowerCase() === s || ({ english: 'en', portuguese: 'pt', spanish: 'es', french: 'fr', german: 'de' } as any)[s] === i.codigo)?.id ?? null;
+    };
+    let importados = 0;
+    // em lotes, para não estourar o tempo de transação na hospedagem compartilhada
+    for (let i = 0; i < registros.length; i += 200) {
+      const lote = registros.slice(i, i + 200);
+      await db.transaction(async (trx) => {
+        const docs = lote.map((r) => {
+          const doi = limparDoi(r.doi);
+          const base = { titulo: r.titulo.slice(0, 5000), autores: r.autores, ano: r.ano, periodico: r.periodico?.slice(0, 300) ?? null, doi, link: r.link };
+          return {
+            id: uuid(),
+            projetoId: busca.projetoId,
+            ...base,
+            link: r.link && r.link.length <= 1000 ? r.link : null,
+            doi: doi && doi.length <= 255 ? doi : null,
+            tituloNormalizado: normalizarTitulo(r.titulo),
+            resumo: r.resumo,
+            palavrasChave: r.palavrasChave,
+            citacoes: r.citacoes ?? null,
+            tipoDocumentoId: (r.tipo && tipos[r.tipo]) || null,
+            idiomaId: idiomaId(r.idioma),
+            baseDadosId: busca.baseDadosId,
+            refNbr: referenciaNbr(base),
+            refApa: referenciaApa(base),
+            dadosOriginais: json(r.bruto),
+            criadoPor: t.payload.usuarioId ?? null,
+          };
+        });
+        await trx('documento').insert(docs);
+        await trx('revisaoDocumento').insert(docs.map((d) => ({ id: uuid(), revisaoId: busca.revisaoId, documentoId: d.id, buscaId: busca.id, origem: 'BUSCA', situacao: 'EM_TRIAGEM' })));
+        importados += docs.length;
+      });
+      await db('busca').where({ id: busca.id }).update({ qtdImportada: importados });
+    }
+    const dup = await detectarDuplicados(busca.revisaoId, { user: { id: t.payload.usuarioId }, projeto: { id: busca.projetoId } } as any);
+    const qtdDuplicados = Number((await db('revisaoDocumento').where({ buscaId: busca.id }).whereNotNull('duplicadoDeId').count({ n: '*' }).first())?.n ?? 0);
+    const log = { registros: registros.length, importados, erros: erros.slice(0, 500), duplicadosNaRevisao: dup.duplicados };
+    await db('busca')
+      .where({ id: busca.id })
+      .update({ statusImportacao: 'CONCLUIDA', qtdImportada: importados, qtdErros: erros.length, qtdDuplicados, logImportacao: json(log) });
+    await notificar([t.payload.usuarioId], 'IMPORTACAO_CONCLUIDA', `Importação concluída: ${importados} documentos`, { buscaId: busca.id, ...log, erros: erros.length });
+    return log;
+  } catch (err) {
+    await db('busca').where({ id: busca.id }).update({ statusImportacao: 'ERRO', logImportacao: json({ erro: (err as Error).message }) });
+    throw err;
+  }
+};
+
+// ------------------------------------------------ gerar-pdf-protocolo (RF13, S1)
+const gerarPdfProtocolo: Handler = async (t) => {
+  const { protocoloId, projetoId, versao, secoes } = t.payload;
+  const projeto = await db('projeto').where({ id: projetoId }).first();
+  const equipe = await db('projetoMembro as pm').join('usuario as u', 'u.id', 'pm.usuarioId').where('pm.projetoId', projetoId).whereNotNull('pm.aceitoEm').select('u.nome', 'u.orcid', 'pm.papel').orderBy('u.nome');
+  const atual = await db('protocolo as p').leftJoin('usuario as u', 'u.id', 'p.aprovadoPor').where('p.id', protocoloId).first('p.*', 'u.nome as aprovadoPorNome');
+  const v = versao ? await db('protocoloVersao').where({ protocoloId, versao }).first() : null;
+  const p = v ? { ...v.snapshot, aprovadoEm: atual.aprovadoEm, aprovadoPorNome: atual.aprovadoPorNome, parecer: atual.parecer } : { ...(await protocoloCompleto(protocoloId)), aprovadoPorNome: atual.aprovadoPorNome };
+  const status = v ? (versao === atual.versaoAtual ? atual.status : 'CONCLUIDO') : atual.status;
+  const revisoes: any[] = [];
+  for (const r of await db('revisao as r').join('tipoRevisao as t', 't.id', 'r.tipoRevisaoId').leftJoin('diretrizRelato as d', 'd.id', 'r.diretrizRelatoId').where('r.projetoId', projetoId).select('r.id', 'r.titulo', 't.nome as tipoNome', 'd.sigla as diretrizSigla', 'd.versao as diretrizVersao', 'd.urlOficial as diretrizUrl')) {
+    revisoes.push({ ...r, etapas: await db('revisaoEtapa').where({ revisaoId: r.id }).orderBy('ordem').select('nome') });
+  }
+  const versoes = await db('protocoloVersao as v').leftJoin('usuario as u', 'u.id', 'v.criadoPor').where('v.protocoloId', protocoloId).orderBy('v.versao').select('v.versao', 'v.criadoEm', 'v.justificativa', 'u.nome as criadoPorNome');
+  const numero = versao ?? (atual.versaoAtual || null);
+  const pdf = await htmlParaPdf(
+    htmlProtocolo({ projeto, equipe, p, versao: numero, status, revisoes, versoes, secoes }),
+    `Protocolo de pesquisa · versão ${numero ?? 'em edição'}`,
+  );
+  const arquivoId = await salvarArquivo({
+    projetoId,
+    chave: `projetos/${projetoId}/protocolos/${versao ? `v${versao}` : `rascunho-${carimbo()}`}.pdf`,
+    nomeOriginal: `protocolo_${versao ? `v${versao}` : 'rascunho'}.pdf`,
+    mimeType: 'application/pdf',
+    dados: pdf,
+    criadoPor: t.payload.usuarioId ?? null,
+  });
+  if (v) await db('protocoloVersao').where({ id: v.id }).update({ pdfArquivoId: arquivoId });
+  await salvarResultado(t, { arquivoId });
+  return { arquivoId };
+};
+
+// ------------------------------------------------ planilhas (RF41, RF42)
+async function novaPlanilha() {
+  const ExcelJS = (await import('exceljs')).default;
+  return new ExcelJS.Workbook();
+}
+
+function aba(wb: any, nome: string, colunas: { header: string; key: string; width?: number }[], linhas: Record<string, unknown>[]) {
+  const ws = wb.addWorksheet(nome);
+  ws.columns = colunas.map((c) => ({ width: 24, ...c }));
+  ws.getRow(1).font = { bold: true, color: { argb: 'FF003D27' } };
+  ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6FAF3' } };
+  ws.addRows(linhas);
+  ws.views = [{ state: 'frozen', ySplit: 1 }];
+  return ws;
+}
+
+async function linhasAnalise(analiseId: string) {
+  const questoes = await db('analiseQuestao as aq').join('questaoAnalise as q', 'q.id', 'aq.questaoAnaliseId').where('aq.analiseId', analiseId).orderBy('aq.ordem').select('q.id', 'q.codigo', 'q.enunciado');
+  const docs = await db('analiseDocumento as ad').join('documento as d', 'd.id', 'ad.documentoId').where('ad.analiseId', analiseId).orderBy('ad.ordem').select('ad.id', 'ad.ordem', 'ad.progresso', 'ad.consideracoes', 'ad.observacoes', 'd.titulo', 'd.autores', 'd.ano', 'd.refApa');
+  const respostas = await db('resposta').whereIn('analiseDocumentoId', docs.map((d: any) => d.id));
+  const matriz = await db('matrizSinteseItem as m').join('analiseDocumento as ad', 'ad.id', 'm.analiseDocumentoId').join('documento as d', 'd.id', 'ad.documentoId').where('ad.analiseId', analiseId).orderBy(['ad.ordem', 'm.ordem']).select('d.titulo', 'm.citacao', 'm.textoOriginal', 'm.textoParafraseado', 'm.pagina');
+  const discussao = await db('discussaoItem as x').join('analiseDocumento as ad', 'ad.id', 'x.analiseDocumentoId').join('documento as d', 'd.id', 'ad.documentoId').where('ad.analiseId', analiseId).orderBy(['ad.ordem', 'x.ordem']).select('d.titulo', 'x.pontoPrincipal', 'x.discussao');
+  const analise = docs.map((d: any) => ({
+    ordem: d.ordem,
+    titulo: d.titulo,
+    autores: d.autores,
+    ano: d.ano,
+    progresso: d.progresso,
+    ...Object.fromEntries(questoes.map((q: any) => [q.codigo, respostas.find((r: any) => r.analiseDocumentoId === d.id && r.questaoAnaliseId === q.id)?.texto ?? ''])),
+    consideracoes: d.consideracoes,
+    observacoes: d.observacoes,
+  }));
+  return { questoes, analise, matriz, discussao };
+}
+
+function abasAnalise(wb: any, sufixo: string, l: Awaited<ReturnType<typeof linhasAnalise>>) {
+  aba(wb, `Análise${sufixo}`.slice(0, 31), [
+    { header: 'Nº', key: 'ordem', width: 6 },
+    { header: 'Título', key: 'titulo', width: 50 },
+    { header: 'Autores', key: 'autores', width: 30 },
+    { header: 'Ano', key: 'ano', width: 8 },
+    { header: 'Progresso', key: 'progresso', width: 14 },
+    ...l.questoes.map((q: any) => ({ header: `${q.codigo} – ${q.enunciado}`.slice(0, 120), key: q.codigo, width: 40 })),
+    { header: 'Considerações', key: 'consideracoes', width: 40 },
+    { header: 'Observações', key: 'observacoes', width: 40 },
+  ], l.analise);
+  aba(wb, `Matriz-Síntese${sufixo}`.slice(0, 31), [
+    { header: 'Documento', key: 'titulo', width: 50 },
+    { header: 'Citação', key: 'citacao', width: 28 },
+    { header: 'Texto original', key: 'textoOriginal', width: 60 },
+    { header: 'Texto parafraseado', key: 'textoParafraseado', width: 60 },
+    { header: 'Página', key: 'pagina', width: 10 },
+  ], l.matriz);
+  aba(wb, `Discussão${sufixo}`.slice(0, 31), [
+    { header: 'Documento', key: 'titulo', width: 50 },
+    { header: 'Ponto principal', key: 'pontoPrincipal', width: 50 },
+    { header: 'Discussão', key: 'discussao', width: 80 },
+  ], l.discussao);
+}
+
+const exportarProjeto: Handler = async (t) => {
+  const { projetoId } = t.payload;
+  const projeto = await db('projeto').where({ id: projetoId }).first();
+  const pr = await db('protocolo').where({ projetoId }).first('id');
+  const p = await protocoloCompleto(pr.id);
+  const wb = await novaPlanilha();
+  aba(wb, 'Definições', [{ header: 'Item', key: 'item', width: 28 }, { header: 'Conteúdo', key: 'conteudo', width: 100 }], [
+    { item: 'Projeto', conteudo: projeto.titulo },
+    { item: 'Tema', conteudo: p.tema },
+    { item: 'Questão de pesquisa', conteudo: p.questaoPesquisa },
+    ...p.outrasQuestoes.map((x: any, i: number) => ({ item: `Outra questão ${i + 1}`, conteudo: x.texto })),
+    { item: 'Hipótese', conteudo: p.hipotese },
+    { item: 'Objetivo geral', conteudo: p.objetivoGeral },
+    ...p.objetivos.map((x: any, i: number) => ({ item: `Objetivo específico ${i + 1}`, conteudo: x.texto })),
+    { item: 'Justificativa', conteudo: p.justificativa },
+    { item: 'Palavras-chave', conteudo: p.palavrasChave.map((x: any) => x.termo).join('; ') },
+    ...p.strings.map((s: any) => ({ item: `String (${s.baseNome ?? 'genérica'})`, conteudo: s.expressao })),
+    ...p.descritores.map((d: any) => ({ item: `Descritor ${d.vocabulario}`, conteudo: `${d.termo}${d.codigo ? ` (${d.codigo})` : ''}` })),
+  ]);
+  aba(wb, 'Questões', [{ header: 'Código', key: 'codigo', width: 10 }, { header: 'Questão', key: 'enunciado', width: 100 }], p.questoes);
+  aba(wb, 'Critérios', [{ header: 'Tipo', key: 'tipo', width: 12 }, { header: 'Critério', key: 'nome', width: 24 }, { header: 'Descrição', key: 'descricao', width: 90 }], p.criterios);
+  for (const [i, r] of (await db('revisao').where({ projetoId }).orderBy('criadoEm')).entries()) {
+    const sufixo = i ? ` ${i + 1}` : '';
+    const pn = await painel(r.id);
+    aba(wb, `Etapas${sufixo}`, [
+      { header: 'Etapa', key: 'etapaNome', width: 34 },
+      { header: 'Base', key: 'base', width: 22 },
+      { header: 'Selecionados', key: 'selecionados', width: 14 },
+      { header: 'Excluídos', key: 'excluidos', width: 12 },
+      { header: 'Excl. critério', key: 'excluidosCriterio', width: 14 },
+      { header: 'Excl. duplicados', key: 'excluidosDuplicados', width: 16 },
+      { header: 'Excl. sem acesso', key: 'excluidosSemAcesso', width: 16 },
+    ], pn.porEtapa);
+    const selecionados = await db('revisaoDocumento as rd').join('documento as d', 'd.id', 'rd.documentoId').leftJoin('categoria as c', 'c.id', 'rd.categoriaId').where({ 'rd.revisaoId': r.id, 'rd.situacao': 'INCLUIDO' }).select('d.titulo', 'd.autores', 'd.ano', 'd.periodico', 'd.doi', 'rd.origem', 'c.nome as categoria', 'd.refNbr', 'd.refApa');
+    aba(wb, `Selecionados${sufixo}`, [
+      { header: 'Título', key: 'titulo', width: 50 },
+      { header: 'Autores', key: 'autores', width: 30 },
+      { header: 'Ano', key: 'ano', width: 8 },
+      { header: 'Periódico', key: 'periodico', width: 30 },
+      { header: 'DOI', key: 'doi', width: 28 },
+      { header: 'Origem', key: 'origem', width: 16 },
+      { header: 'Categoria', key: 'categoria', width: 20 },
+      { header: 'Referência NBR', key: 'refNbr', width: 60 },
+      { header: 'Referência APA', key: 'refApa', width: 60 },
+    ], selecionados);
+  }
+  for (const [i, a] of (await db('analise').where({ projetoId }).orderBy('criadoEm')).entries()) abasAnalise(wb, i ? ` ${i + 1}` : '', await linhasAnalise(a.id));
+  const dados = Buffer.from(await wb.xlsx.writeBuffer());
+  const arquivoId = await salvarArquivo({ projetoId, chave: `projetos/${projetoId}/exportacoes/projeto-${carimbo()}.xlsx`, nomeOriginal: 'projeto.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', dados, criadoPor: t.payload.usuarioId });
+  await salvarResultado(t, { arquivoId });
+};
+
+const exportarAnalise: Handler = async (t) => {
+  const { analiseId, projetoId, formato } = t.payload;
+  const analise = await db('analise').where({ id: analiseId }).first();
+  const l = await linhasAnalise(analiseId);
+  let dados: Buffer;
+  let ext: string;
+  let mime: string;
+  if (formato === 'pdf') {
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>${ESTILO}</style></head><body>
+<h1>${esc(analise.nome)}</h1><p>${esc(analise.descricao ?? '')}</p>
+${l.analise.map((d: any) => `<h2>${d.ordem}. ${esc(d.titulo)}</h2><p>${esc(d.autores ?? '')} (${d.ano ?? 's.d.'}) · ${esc(d.progresso)}</p>
+<table>${l.questoes.map((q: any) => `<tr><th style="width:30%">${esc(q.codigo)} – ${esc(q.enunciado)}</th><td>${esc(d[q.codigo] || '—')}</td></tr>`).join('')}</table>
+${d.consideracoes ? `<h3>Considerações</h3><p>${esc(d.consideracoes)}</p>` : ''}`).join('')}
+<h2>Matriz de síntese</h2><table><tr><th>Documento</th><th>Citação</th><th>Texto parafraseado</th></tr>${l.matriz.map((m: any) => `<tr><td>${esc(m.titulo)}</td><td>${esc(m.citacao ?? '')}</td><td>${esc(m.textoParafraseado ?? '')}</td></tr>`).join('')}</table>
+</body></html>`;
+    dados = await htmlParaPdf(html, `Análise: ${esc(analise.nome)}`);
+    ext = 'pdf';
+    mime = 'application/pdf';
+  } else {
+    const wb = await novaPlanilha();
+    abasAnalise(wb, '', l);
+    dados = Buffer.from(await wb.xlsx.writeBuffer());
+    ext = 'xlsx';
+    mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  }
+  const arquivoId = await salvarArquivo({ projetoId, chave: `projetos/${projetoId}/exportacoes/analise-${analiseId}-${carimbo()}.${ext}`, nomeOriginal: `analise.${ext}`, mimeType: mime, dados, criadoPor: t.payload.usuarioId });
+  await salvarResultado(t, { arquivoId });
+};
+
+// ------------------------------------------------ relatorio-revisao (RF43)
+const relatorioRevisao: Handler = async (t) => {
+  const { revisaoId, projetoId } = t.payload;
+  const r = await db('revisao as r').join('tipoRevisao as tr', 'tr.id', 'r.tipoRevisaoId').leftJoin('diretrizRelato as d', 'd.id', 'r.diretrizRelatoId').where('r.id', revisaoId).first('r.*', 'tr.nome as tipoNome', 'd.sigla as diretrizSigla', 'd.versao as diretrizVersao');
+  const pr = await db('protocolo').where({ projetoId }).first('id');
+  const p = await protocoloCompleto(pr.id);
+  const pn = await painel(revisaoId);
+  const incluidos = await db('revisaoDocumento as rd').join('documento as d', 'd.id', 'rd.documentoId').where({ 'rd.revisaoId': revisaoId, 'rd.situacao': 'INCLUIDO' }).orderBy('d.titulo').select('d.refNbr', 'd.titulo');
+  const checklist = await db('revisaoChecklistItem').where({ revisaoId }).orderBy('ordem');
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>${ESTILO}</style></head><body>
+<h1>${esc(r.titulo)}</h1><p>Tipo: ${esc(r.tipoNome)} · Diretriz: ${esc(r.diretrizSigla ?? 'nenhuma')} ${esc(r.diretrizVersao ?? '')}</p>
+<h2>Protocolo resumido</h2><p><b>Questão:</b> ${esc(p.questaoPesquisa)}</p><p><b>Objetivo:</b> ${esc(p.objetivoGeral)}</p>
+<p><b>Palavras-chave:</b> ${esc(p.palavrasChave.map((x: any) => x.termo).join('; '))}</p>
+<h2>Painel de etapas</h2><table><tr><th>Etapa</th><th>Base</th><th>Selecionados</th><th>Excluídos</th></tr>${pn.porEtapa.map((e: any) => `<tr><td>${esc(e.etapaNome)}</td><td>${esc(e.base)}</td><td>${e.selecionados}</td><td>${e.excluidos}</td></tr>`).join('')}</table>
+<h2>Fluxo de seleção</h2>${fluxogramaSvg(pn)}
+<h2>Incluídos (${incluidos.length})</h2><ol>${incluidos.map((d: any) => `<li>${esc(d.refNbr ?? d.titulo)}</li>`).join('')}</ol>
+<h2>Checklist de relato</h2><table><tr><th>Cód.</th><th>Item</th><th>Situação</th><th>Local</th></tr>${checklist.map((c: any) => `<tr><td>${esc(c.codigo)}</td><td>${esc(c.descricao)}</td><td>${esc(c.situacao)}</td><td>${esc(c.localRelato ?? '')}</td></tr>`).join('')}</table>
+</body></html>`;
+  const dados = await htmlParaPdf(html, `Relatório da revisão · ${esc(r.titulo).slice(0, 60)}`);
+  const arquivoId = await salvarArquivo({ projetoId, chave: `projetos/${projetoId}/relatorios/revisao-${revisaoId}-${carimbo()}.pdf`, nomeOriginal: 'relatorio_revisao.pdf', mimeType: 'application/pdf', dados, criadoPor: t.payload.usuarioId });
+  await salvarResultado(t, { arquivoId });
+};
+
+// ------------------------------------------------ limpar-lixeira (RN17: 30 dias)
+export async function limparLixeira() {
+  const limite = new Date(Date.now() - 30 * 86_400_000);
+  const projetos = await db('projeto').whereNotNull('excluidoEm').where('excluidoEm', '<', limite).select('id');
+  for (const { id } of projetos) {
+    const arquivos = await db('arquivo').where({ projetoId: id }).select('chaveStorage');
+    for (const a of arquivos) {
+      try {
+        await storage().remove(a.chaveStorage);
+      } catch (err) {
+        logger.warn({ err, chave: a.chaveStorage }, 'falha ao remover arquivo do storage');
+      }
+    }
+    await db('projeto').where({ id }).del(); // as FKs em cascata apagam o resto
+    logger.info({ projetoId: id }, 'projeto removido da lixeira');
+  }
+  // tarefas e operações de sincronização antigas
+  await db('filaTarefa').whereIn('status', ['CONCLUIDA', 'ERRO']).where('atualizadoEm', '<', new Date(Date.now() - 30 * 86_400_000)).del();
+  await db('syncOperacao').where('criadoEm', '<', new Date(Date.now() - 30 * 86_400_000)).del();
+  await db('refreshToken').where('expiraEm', '<', new Date()).del();
+  return { removidos: projetos.length };
+}
+
+export const handlers: Record<string, Handler> = {
+  'importar-busca': importarBusca,
+  'gerar-pdf-protocolo': gerarPdfProtocolo,
+  'exportar-projeto': exportarProjeto,
+  'exportar-analise': exportarAnalise,
+  'relatorio-revisao': relatorioRevisao,
+  'limpar-lixeira': async () => limparLixeira(),
+};
