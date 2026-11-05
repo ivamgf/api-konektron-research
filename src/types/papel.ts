@@ -1,0 +1,1 @@
+export type Papel = 'RESPONSAVEL' | 'COLABORADOR' | 'ORIENTADOR' | 'LEITOR';

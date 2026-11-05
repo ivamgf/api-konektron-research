@@ -147,3 +147,9 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Konektron Research
+/storage/
+bin/fixie-wrench*
+*.sql.gz
+!.env.example
