@@ -93,6 +93,8 @@ Responsável: tudo no projeto. Colaborador: protocolo, documentos, triagem e an�
   2. Cadastre os 2 IPs fixos do Fixie (painel do add-on) em cPanel › **Acesso remoto ao banco de dados**.
   3. `heroku config:set DB_HOST=127.0.0.1 DB_REMOTE_HOST=<servidor MySQL> DB_NAME=... DB_USER=... DB_PASSWORD=...`
   4. Confira com `heroku run bash bin/db-connect.sh npm run db:check`.
+  **Não copie os valores do `.env` com aspas**: nas Config Vars as aspas viram parte do valor (uma senha `"abc"` fica com 5 caracteres e o MySQL responde *Access denied*). Não defina `PORT` (o Heroku define) e use um `JWT_SECRET` diferente do de desenvolvimento.
+  Enquanto o release command falhar, o app continua no último release bom e `heroku config` mostra as variáveis dele; as novas aparecem em `heroku releases:info` e valem a partir do primeiro release que passar.
   O `bin/db-connect.sh` registra no log (`db-connect: ...`) a abertura do túnel e falha com a causa se `FIXIE_SOCKS_HOST` faltar ou o túnel não abrir.
 - `Procfile`: `release` roda as migrações; `web` e `worker` sobem pelo `bin/db-connect.sh`, chamado via `bash` (o Git no Windows não grava o bit de execução dos `.sh`).
 - fixie-wrench: o binário **não fica no repositório** (`.gitignore`). O `heroku-postbuild` roda `bin/install-fixie-wrench.sh`, que baixa a versão fixada (v1.0.0, Linux x86_64) do GitHub, confere o SHA-256 e grava `bin/fixie-wrench` com permissão de execução no slug. Fora do Linux x86_64 o script não faz nada. Para atualizar, troque `FIXIE_WRENCH_VERSION` e `FIXIE_WRENCH_SHA256` no script. Não use o `install.sh` oficial no build: ele é interativo e não marca o binário como executável.
