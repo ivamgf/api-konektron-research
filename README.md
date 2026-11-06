@@ -88,6 +88,12 @@ Responsável: tudo no projeto. Colaborador: protocolo, documentos, triagem e an�
 - App `konektron-research-api` com buildpacks, nesta ordem: `heroku-community/apt` (Aptfile: `mysql-client`), `heroku-community/chrome-for-testing`, `heroku/nodejs`.
 - Add-ons: Fixie Socks (IPs fixos, cadastrados no Acesso remoto do cPanel) e Heroku Scheduler (`bash bin/db-connect.sh bash bin/backup.sh` às 06:00 UTC).
 - Config Vars: as do `.env.example`, com `DB_HOST=127.0.0.1`, `DB_REMOTE_HOST=<servidor MySQL>`, `STORAGE_DRIVER=gcs` e `NODE_ENV=production`.
+- Conexão com o MySQL pelo túnel (sem isso a migração do `release` falha com `ECONNREFUSED 127.0.0.1:3306`):
+  1. `heroku addons:create fixie-socks`: cria a Config Var `FIXIE_SOCKS_HOST`.
+  2. Cadastre os 2 IPs fixos do Fixie (painel do add-on) em cPanel › **Acesso remoto ao banco de dados**.
+  3. `heroku config:set DB_HOST=127.0.0.1 DB_REMOTE_HOST=<servidor MySQL> DB_NAME=... DB_USER=... DB_PASSWORD=...`
+  4. Confira com `heroku run bash bin/db-connect.sh npm run db:check`.
+  O `bin/db-connect.sh` registra no log (`db-connect: ...`) a abertura do túnel e falha com a causa se `FIXIE_SOCKS_HOST` faltar ou o túnel não abrir.
 - `Procfile`: `release` roda as migrações; `web` e `worker` sobem pelo `bin/db-connect.sh`, chamado via `bash` (o Git no Windows não grava o bit de execução dos `.sh`).
 - fixie-wrench: o binário **não fica no repositório** (`.gitignore`). O `heroku-postbuild` roda `bin/install-fixie-wrench.sh`, que baixa a versão fixada (v1.0.0, Linux x86_64) do GitHub, confere o SHA-256 e grava `bin/fixie-wrench` com permissão de execução no slug. Fora do Linux x86_64 o script não faz nada. Para atualizar, troque `FIXIE_WRENCH_VERSION` e `FIXIE_WRENCH_SHA256` no script. Não use o `install.sh` oficial no build: ele é interativo e não marca o binário como executável.
 - Escala de produção: `heroku ps:scale web=1:standard-1x worker=1:standard-2x`.
