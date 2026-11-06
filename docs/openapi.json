@@ -210,12 +210,12 @@
         }
       }
     },
-    "/analise-documentos/{id}/discussao": {
+    "/analise-documentos/{adId}/discussao": {
       "get": {
         "tags": [
           "Análises"
         ],
-        "operationId": "getAnaliseDocumentosByidDiscussao",
+        "operationId": "getAnaliseDocumentosByadIdDiscussao",
         "description": "Requer ser membro do projeto (qualquer papel).",
         "parameters": [
           {
@@ -225,7 +225,7 @@
               "type": "string",
               "format": "uuid"
             },
-            "name": "id"
+            "name": "adId"
           }
         ],
         "responses": {
@@ -244,7 +244,7 @@
         "tags": [
           "Análises"
         ],
-        "operationId": "postAnaliseDocumentosByidDiscussao",
+        "operationId": "postAnaliseDocumentosByadIdDiscussao",
         "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
         "parameters": [
           {
@@ -254,7 +254,7 @@
               "type": "string",
               "format": "uuid"
             },
-            "name": "id"
+            "name": "adId"
           }
         ],
         "requestBody": {
@@ -319,12 +319,12 @@
         ]
       }
     },
-    "/analise-documentos/{id}/discussao/{itemId}": {
+    "/analise-documentos/{adId}/discussao/{id}": {
       "get": {
         "tags": [
           "Análises"
         ],
-        "operationId": "getAnaliseDocumentosByidDiscussaoByitemId",
+        "operationId": "getAnaliseDocumentosByadIdDiscussaoByid",
         "description": "Requer ser membro do projeto (qualquer papel).",
         "parameters": [
           {
@@ -334,10 +334,10 @@
               "type": "string",
               "format": "uuid"
             },
-            "name": "id"
+            "name": "adId"
           },
           {
-            "name": "itemId",
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
@@ -365,7 +365,7 @@
         "tags": [
           "Análises"
         ],
-        "operationId": "patchAnaliseDocumentosByidDiscussaoByitemId",
+        "operationId": "patchAnaliseDocumentosByadIdDiscussaoByid",
         "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
         "parameters": [
           {
@@ -375,10 +375,10 @@
               "type": "string",
               "format": "uuid"
             },
-            "name": "id"
+            "name": "adId"
           },
           {
-            "name": "itemId",
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
@@ -452,7 +452,7 @@
         "tags": [
           "Análises"
         ],
-        "operationId": "deleteAnaliseDocumentosByidDiscussaoByitemId",
+        "operationId": "deleteAnaliseDocumentosByadIdDiscussaoByid",
         "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
         "parameters": [
           {
@@ -462,10 +462,10 @@
               "type": "string",
               "format": "uuid"
             },
-            "name": "id"
+            "name": "adId"
           },
           {
-            "name": "itemId",
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
@@ -497,12 +497,12 @@
         ]
       }
     },
-    "/analise-documentos/{id}/discussao/ordem": {
+    "/analise-documentos/{adId}/discussao/ordem": {
       "put": {
         "tags": [
           "Análises"
         ],
-        "operationId": "putAnaliseDocumentosByidDiscussaoOrdem",
+        "operationId": "putAnaliseDocumentosByadIdDiscussaoOrdem",
         "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
         "parameters": [
           {
@@ -512,7 +512,7 @@
               "type": "string",
               "format": "uuid"
             },
-            "name": "id"
+            "name": "adId"
           }
         ],
         "requestBody": {
@@ -561,12 +561,12 @@
         ]
       }
     },
-    "/analise-documentos/{id}/matriz": {
+    "/analise-documentos/{adId}/matriz": {
       "get": {
         "tags": [
           "Análises"
         ],
-        "operationId": "getAnaliseDocumentosByidMatriz",
+        "operationId": "getAnaliseDocumentosByadIdMatriz",
         "description": "Requer ser membro do projeto (qualquer papel).",
         "parameters": [
           {
@@ -576,7 +576,7 @@
               "type": "string",
               "format": "uuid"
             },
-            "name": "id"
+            "name": "adId"
           }
         ],
         "responses": {
@@ -595,7 +595,7 @@
         "tags": [
           "Análises"
         ],
-        "operationId": "postAnaliseDocumentosByidMatriz",
+        "operationId": "postAnaliseDocumentosByadIdMatriz",
         "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
         "parameters": [
           {
@@ -605,7 +605,7 @@
               "type": "string",
               "format": "uuid"
             },
-            "name": "id"
+            "name": "adId"
           }
         ],
         "requestBody": {
@@ -692,12 +692,12 @@
         ]
       }
     },
-    "/analise-documentos/{id}/matriz/{itemId}": {
+    "/analise-documentos/{adId}/matriz/{id}": {
       "get": {
         "tags": [
           "Análises"
         ],
-        "operationId": "getAnaliseDocumentosByidMatrizByitemId",
+        "operationId": "getAnaliseDocumentosByadIdMatrizByid",
         "description": "Requer ser membro do projeto (qualquer papel).",
         "parameters": [
           {
@@ -707,10 +707,10 @@
               "type": "string",
               "format": "uuid"
             },
-            "name": "id"
+            "name": "adId"
           },
           {
-            "name": "itemId",
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
@@ -738,7 +738,7 @@
         "tags": [
           "Análises"
         ],
-        "operationId": "patchAnaliseDocumentosByidMatrizByitemId",
+        "operationId": "patchAnaliseDocumentosByadIdMatrizByid",
         "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
         "parameters": [
           {
@@ -748,10 +748,10 @@
               "type": "string",
               "format": "uuid"
             },
-            "name": "id"
+            "name": "adId"
           },
           {
-            "name": "itemId",
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
@@ -847,7 +847,7 @@
         "tags": [
           "Análises"
         ],
-        "operationId": "deleteAnaliseDocumentosByidMatrizByitemId",
+        "operationId": "deleteAnaliseDocumentosByadIdMatrizByid",
         "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
         "parameters": [
           {
@@ -857,10 +857,10 @@
               "type": "string",
               "format": "uuid"
             },
-            "name": "id"
+            "name": "adId"
           },
           {
-            "name": "itemId",
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
@@ -892,12 +892,12 @@
         ]
       }
     },
-    "/analise-documentos/{id}/matriz/ordem": {
+    "/analise-documentos/{adId}/matriz/ordem": {
       "put": {
         "tags": [
           "Análises"
         ],
-        "operationId": "putAnaliseDocumentosByidMatrizOrdem",
+        "operationId": "putAnaliseDocumentosByadIdMatrizOrdem",
         "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
         "parameters": [
           {
@@ -907,7 +907,7 @@
               "type": "string",
               "format": "uuid"
             },
-            "name": "id"
+            "name": "adId"
           }
         ],
         "requestBody": {
