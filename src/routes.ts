@@ -39,9 +39,10 @@ router.get('/health', async (_req, res) => {
 
 // públicas
 router.use('/auth', authRoutes);
-router.get('/arquivos/download', validate({ query: z.object({ token: z.string().min(10) }) }), async (req, res) => {
+router.get('/arquivos/download', validate({ query: z.object({ token: z.string().min(10), download: z.enum(['1', 'true']).optional() }) }), async (req, res) => {
   const a = await downloadLocal(req.validated.query.token);
-  res.setHeader('Content-Disposition', disposicao(a.nome, a.mimeType));
+  // ?download=1 força salvar o arquivo; sem ele, PDF abre no navegador
+  res.setHeader('Content-Disposition', disposicao(a.nome, req.validated.query.download ? null : a.mimeType));
   // o CSP do helmet (object-src 'none') impede o leitor de PDF do navegador de exibir o arquivo
   if (a.mimeType === 'application/pdf') res.removeHeader('Content-Security-Policy');
   res.type(a.mimeType).send(a.dados);
