@@ -89,6 +89,15 @@ test('cobre as rotas da tabela do README, com autenticação e papéis', () => {
   );
 });
 
+test('matriz e discussão usam {adId} para o pai (o :id do item não o sobrescreve)', () => {
+  const { paths } = gerado() as any;
+  for (const sub of ['matriz', 'discussao']) {
+    const item = paths[`/analise-documentos/{adId}/${sub}/{id}`];
+    assert.ok(item?.patch && item?.delete, `PATCH/DELETE /analise-documentos/{adId}/${sub}/{id}`);
+    assert.equal(paths[`/analise-documentos/{id}/${sub}/{itemId}`], undefined);
+  }
+});
+
 test('parâmetro repetido (/projetos/:id/temas/:id) vira {itemId}', () => {
   assert.equal(renomearRepetidos('/projetos/:id/temas/:id'), '/projetos/:id/temas/:itemId');
   assert.equal(renomearRepetidos('/a/:x/b/:x/c/:x'), '/a/:x/b/:x2/c/:x22');

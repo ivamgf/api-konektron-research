@@ -2,6 +2,7 @@
 # bin/db-connect.sh — no Heroku, encaminha 127.0.0.1:3306 até o MySQL da hospedagem
 # pelo Fixie Socks (IPs fixos liberados no cPanel) e executa "$@" (ERS 11.3).
 # Fora do Heroku (sem a variável DYNO) e sem FIXIE_SOCKS_HOST apenas executa o comando.
+# Com DB_HOST remoto (não 127.0.0.1/localhost) conecta direto, sem túnel (cPanel liberando o host %).
 set -euo pipefail
 
 PORTA="${DB_PORT:-3306}"
@@ -17,11 +18,13 @@ if [ -z "${FIXIE_SOCKS_HOST:-}" ]; then
   exec "$@"
 fi
 
-: "${DB_REMOTE_HOST:?defina DB_REMOTE_HOST com o IP ou domínio do servidor MySQL}"
-
 if [[ ! "${DB_HOST:-}" =~ ^(127\.0\.0\.1|localhost)$ ]]; then
-  log "aviso: DB_HOST=${DB_HOST:-} não passa pelo túnel; para usar os IPs fixos do Fixie, defina DB_HOST=127.0.0.1."
+  # Conexão direta: não abre o túnel nem gasta a cota do Fixie. Para voltar ao túnel, DB_HOST=127.0.0.1.
+  log "DB_HOST=${DB_HOST:-} é remoto: conectando direto, sem o túnel do Fixie."
+  exec "$@"
 fi
+
+: "${DB_REMOTE_HOST:?defina DB_REMOTE_HOST com o IP ou domínio do servidor MySQL}"
 
 if [ ! -x ./bin/fixie-wrench ]; then
   log "bin/fixie-wrench ausente ou sem permissão de execução: rode bash bin/install-fixie-wrench.sh"

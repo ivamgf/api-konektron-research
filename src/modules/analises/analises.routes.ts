@@ -264,13 +264,14 @@ analises.post('/:id/exportar', validate({ body: z.object({ formato: z.enum(['xls
 
 // ------------------------------------------------ /analise-documentos/:id/matriz e /discussao
 export const analiseDocumentos = Router();
-analiseDocumentos.use('/:id', projectAccess('analiseDocumento'));
+// :adId (e não :id): os CRUDs abaixo também usam /:id e, com mergeParams, o do item sobrescreveria o do pai
+analiseDocumentos.use('/:adId', projectAccess('analiseDocumento', 'adId'));
 
 analiseDocumentos.use(
-  '/:id/matriz',
+  '/:adId/matriz',
   crudRouter({
     table: 'matrizSinteseItem',
-    scope: (req) => ({ analiseDocumentoId: String(req.params.id) }),
+    scope: (req) => ({ analiseDocumentoId: String(req.params.adId) }),
     write: [requirePapel(...EDITA)],
     ordered: true,
     label: 'Item da matriz',
@@ -279,10 +280,10 @@ analiseDocumentos.use(
 );
 
 analiseDocumentos.use(
-  '/:id/discussao',
+  '/:adId/discussao',
   crudRouter({
     table: 'discussaoItem',
-    scope: (req) => ({ analiseDocumentoId: String(req.params.id) }),
+    scope: (req) => ({ analiseDocumentoId: String(req.params.adId) }),
     write: [requirePapel(...EDITA)],
     ordered: true,
     label: 'Item da discussão',
