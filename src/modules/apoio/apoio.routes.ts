@@ -102,9 +102,11 @@ apoioDoProjeto.get('/busca', validate({ query: z.object({ q: z.string().trim().m
   res.json({ documentos, respostas, citacoes });
 });
 
-// RF42: exportação do projeto no layout da planilha modelo (gerada no worker)
-apoioDoProjeto.post('/exportar', validate({ body: z.object({ formato: z.enum(['xlsx']).optional() }) }), async (req, res) => {
-  const tarefaId = await enfileirar('exportar-projeto', { projetoId: req.projeto!.id, usuarioId: req.user!.id });
+// RF42: exportação do projeto (gerada no worker): planilha modelo (xlsx, padrão) ou PDF do projeto
+// inteiro — protocolo, relatórios das revisões e análises
+apoioDoProjeto.post('/exportar', validate({ body: z.object({ formato: z.enum(['xlsx', 'pdf']).optional() }) }), async (req, res) => {
+  const fila = req.validated.body.formato === 'pdf' ? 'gerar-pdf-projeto' : 'exportar-projeto';
+  const tarefaId = await enfileirar(fila, { projetoId: req.projeto!.id, usuarioId: req.user!.id });
   res.status(202).json({ tarefaId, acompanhar: `/api/v1/tarefas/${tarefaId}` });
 });
 

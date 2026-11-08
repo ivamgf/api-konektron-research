@@ -49,6 +49,8 @@ const schema = z.object({
 
   CHROME_PATH: optional,
   WORKER_POLL_MS: z.coerce.number().int().min(250).default(2000),
+  // true: o web também processa a fila (dispensa o dyno worker)
+  WORKER_EMBUTIDO: flag,
 });
 
 const parsed = schema.safeParse(process.env);
