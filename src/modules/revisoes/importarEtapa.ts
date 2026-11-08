@@ -35,7 +35,15 @@ type Decisao = {
   criterio: string | null;
   observacao: string | null;
 };
-type Linha = Registro & { linha: number; base: string | null; decisao: Decisao | null };
+type Linha = Registro & {
+  linha: number;
+  base: string | null;
+  decisao: Decisao | null;
+  refNbr: string | null;
+  refApa: string | null;
+  refApa2: string | null;
+  temas: string[];
+};
 export type Relatorio = {
   linhas: number;
   documentosCriados: number;
@@ -43,6 +51,7 @@ export type Relatorio = {
   documentosDaRevisao: number;
   decisoes: { selecionados: number; excluidos: number; semDecisao: number };
   selecionadosEmEtapasAnteriores: number;
+  temasCriados?: number;
   avisos: { linha: number; mensagem: string }[];
 };
 
@@ -53,6 +62,25 @@ const EXTRAS = {
   criterio: ['criterio', 'criterio de exclusao', 'criterion'],
   observacao: ['observacao', 'observacoes', 'obs', 'notes', 'comentario', 'comentarios'],
   base: ['base', 'base de dados', 'database', 'fonte', 'source'],
+  // layout da planilha RIL (Ref-NBR, Ref-APA, Ref-APA 2, Temas)
+  refNbr: ['ref-nbr', 'ref nbr', 'referencia nbr', 'nbr'],
+  refApa: ['ref-apa', 'ref apa', 'referencia apa', 'apa'],
+  refApa2: ['ref-apa 2', 'ref-apa2', 'ref apa 2', 'referencia apa 2'],
+  temas: ['temas', 'tema', 'themes', 'topics'],
+};
+
+// células que a planilha usa para "sem valor"
+const VAZIO = new Set(['n/d', 'nd', 'n/a', 'na', 'nan', '-', '--', 'null', 'none']);
+const vazio = (v: string | null | undefined) =>
+  v && !VAZIO.has(v.trim().toLowerCase()) ? v : null;
+// DOI dentro de periódico, link ou referência (ex.: "... doi: 10.1186/s13690-021-00770-6.")
+const DOI_NO_TEXTO = /\b(10\.\d{4,9}\/[^\s"<>,;]+[^\s"<>,;.)\]])/i;
+export const doiNoTexto = (...textos: (string | null | undefined)[]) => {
+  for (const t of textos) {
+    const m = t ? DOI_NO_TEXTO.exec(t) : null;
+    if (m) return m[1];
+  }
+  return null;
 };
 const SIM = [
   'selecionado',
@@ -115,6 +143,10 @@ export function lerCsvDaEtapa(texto: string): { linhas: Linha[]; avisos: Relator
     criterio: col('criterio'),
     observacao: col('observacao'),
     base: col('base'),
+    refNbr: col('refNbr'),
+    refApa: col('refApa'),
+    refApa2: col('refApa2'),
+    temas: col('temas'),
   };
   const avisos = [...erros];
   // tabelaParaRegistros pula linhas sem título: refaz o mapeamento linha → registro pela ordem
@@ -154,7 +186,31 @@ export function lerCsvDaEtapa(texto: string): { linhas: Linha[]; avisos: Relator
           mensagem: `decisão "${d}" não reconhecida (use SELECIONADO ou EXCLUIDO); linha importada sem decisão`,
         });
     }
-    return { ...r, linha: n, base: v(idx.base), decisao };
+    const limpo = Object.fromEntries(
+      Object.entries(r).map(([k, x]) => [k, typeof x === 'string' ? vazio(x) : x]),
+    ) as Registro;
+    const refNbr = vazio(v(idx.refNbr));
+    const refApa = vazio(v(idx.refApa));
+    return {
+      ...limpo,
+      titulo: r.titulo,
+      doi: limpo.doi ?? doiNoTexto(limpo.periodico, limpo.link, refNbr, refApa),
+      linha: n,
+      base: vazio(v(idx.base)),
+      decisao,
+      refNbr,
+      refApa,
+      refApa2: vazio(v(idx.refApa2)),
+      temas: [
+        ...new Set(
+          (vazio(v(idx.temas)) ?? '')
+            .split(/[;,]/)
+            .map((t) => t.trim())
+            .filter(Boolean)
+            .map((t) => t.slice(0, 120)),
+        ),
+      ],
+    };
   });
   return { linhas, avisos };
 }
@@ -179,6 +235,31 @@ class Indice {
   }
 }
 
+async function abrirEtapa(trx: Trx, revisaoId: string, etapa: any, etapas: any[]) {
+  const agora = new Date();
+  const abertas = etapas.filter(
+    (e) => e.ordem < etapa.ordem && (e.status === 'PENDENTE' || e.status === 'EM_ANDAMENTO'),
+  );
+  for (const e of abertas) {
+    await trx('revisaoEtapa')
+      .where({ id: e.id })
+      .update({ status: 'CONCLUIDA', iniciadaEm: e.iniciadaEm ?? agora, concluidaEm: agora });
+    e.status = 'CONCLUIDA';
+  }
+  // etapas posteriores que estavam em andamento voltam a pendente (só uma etapa aberta por vez)
+  await trx('revisaoEtapa')
+    .where({ revisaoId, status: 'EM_ANDAMENTO' })
+    .where('ordem', '>', etapa.ordem)
+    .update({ status: 'PENDENTE' });
+  await trx('revisaoEtapa')
+    .where({ id: etapa.id })
+    .update({ status: 'EM_ANDAMENTO', iniciadaEm: agora });
+  etapa.status = 'EM_ANDAMENTO';
+  await trx('revisao')
+    .where({ id: revisaoId })
+    .update({ etapaAtualId: etapa.id, status: 'EM_ANDAMENTO' });
+}
+
 /** Etapa em que a decisão é gravada: a própria; na inclusão, a última triagem antes dela; na busca, nenhuma */
 function etapaDaDecisao(etapa: any, etapas: any[]) {
   if (etapa.exigeTriagem || etapa.permiteExclusao) return etapa;
@@ -197,6 +278,11 @@ export async function importarCsvDaEtapa(o: {
   substituir: boolean;
   /** só calcula o relatório e desfaz tudo (pré-visualização) */
   simular?: boolean;
+  /**
+   * Etapa pendente: inicia a etapa e conclui as anteriores ainda abertas — triagem feita fora do
+   * app (ex.: planilha RIL com F1, F2 e F3), em que busca e deduplicação também já aconteceram.
+   */
+  iniciar?: boolean;
 }): Promise<Relatorio & { simulado: boolean }> {
   const { linhas, avisos } = lerCsvDaEtapa(o.texto);
   let simulado: Relatorio | undefined;
@@ -236,8 +322,17 @@ async function importar(
         'Esta etapa não recebe documentos; importe na busca, deduplicação, triagem ou inclusão',
       );
     }
-    if (etapa.status !== 'EM_ANDAMENTO' && etapa.status !== 'CONCLUIDA')
-      throw AppError.conflict('Inicie a etapa antes de importar');
+    if (etapa.status === 'DISPENSADA')
+      throw AppError.conflict('A etapa foi dispensada; reabra-a antes de importar');
+    if (etapa.status === 'PENDENTE') {
+      if (!o.iniciar)
+        throw AppError.conflict('Inicie a etapa antes de importar (ou marque "iniciar a etapa")');
+      await abrirEtapa(trx, o.revisaoId, etapa, etapas);
+      avisos.push({
+        linha: 1,
+        mensagem: `a etapa "${etapa.nome}" foi iniciada e as anteriores ainda abertas foram concluídas`,
+      });
+    }
     const alvo = etapaDaDecisao(etapa, etapas);
     if (etapa.categoria === 'INCLUSAO' && !alvo)
       avisos.push({
@@ -296,6 +391,30 @@ async function importar(
       return b;
     };
 
+    // idioma pelo código, pelo nome em português ou em inglês ("Inglês", "English", "en")
+    const idiomas = await trx('idioma').select('id', 'codigo', 'nome');
+    const INGLES: Record<string, string> = {
+      english: 'en',
+      portuguese: 'pt',
+      spanish: 'es',
+      french: 'fr',
+      german: 'de',
+    };
+    const idiomaId = (valor?: string | null) => {
+      const s = semAcento(valor ?? '');
+      if (!s) return null;
+      return (
+        idiomas.find(
+          (i: any) =>
+            i.codigo === s ||
+            semAcento(i.nome) === s ||
+            INGLES[s] === i.codigo ||
+            (s.length > 2 &&
+              i.codigo === s.slice(0, 2) &&
+              !idiomas.some((j: any) => semAcento(j.nome) === s)),
+        )?.id ?? null
+      );
+    };
     const tipos = Object.fromEntries(
       (await trx('tipoDocumento').select('id', 'nome')).map((x: any) => [x.nome, x.id]),
     );
@@ -341,8 +460,11 @@ async function importar(
             citacoes: l.citacoes ?? null,
             tipoDocumentoId: (l.tipo && tipos[l.tipo]) || null,
             baseDadosId: base.id,
-            refNbr: referenciaNbr(campos),
-            refApa: referenciaApa(campos),
+            idiomaId: idiomaId(l.idioma),
+            // referências da planilha têm prioridade sobre as geradas
+            refNbr: l.refNbr ?? referenciaNbr(campos),
+            refApa: l.refApa ?? referenciaApa(campos),
+            refApa2: l.refApa2,
             dadosOriginais: json(l.bruto),
             criadoPor: o.usuarioId,
           });
@@ -367,6 +489,31 @@ async function importar(
     }
     for (const lote of emLotes(novosDocs)) await trx('documento').insert(lote);
     for (const lote of emLotes(novosRds)) await trx('revisaoDocumento').insert(lote);
+
+    // ---- temas do projeto (coluna Temas): cria os que faltam e liga aos documentos
+    const temasPorDoc = new Map<string, string[]>();
+    for (const [rdId, l] of porRd) if (l.temas.length) temasPorDoc.set(rdId, l.temas);
+    if (temasPorDoc.size) {
+      const existentes = await trx('tema').where({ projetoId: o.projetoId }).select('id', 'nome');
+      const porNome = new Map(existentes.map((t: any) => [semAcento(t.nome), t.id as string]));
+      const novos: Record<string, unknown>[] = [];
+      for (const nome of new Set([...temasPorDoc.values()].flat())) {
+        if (!porNome.has(semAcento(nome))) {
+          const id = uuid();
+          porNome.set(semAcento(nome), id);
+          novos.push({ id, projetoId: o.projetoId, nome });
+        }
+      }
+      for (const lote of emLotes(novos)) await trx('tema').insert(lote);
+      const docDoRd = new Map(daRevisao.map((x: any) => [x.rdId, x.id]));
+      for (const x of novosRds) docDoRd.set(x.id as string, x.documentoId);
+      const ligacoes = [...temasPorDoc].flatMap(([rdId, temas]) =>
+        temas.map((t) => ({ documentoId: docDoRd.get(rdId), temaId: porNome.get(semAcento(t)) })),
+      );
+      for (const lote of emLotes(ligacoes.filter((x) => x.documentoId && x.temaId)))
+        await trx('documentoTema').insert(lote).onConflict().ignore();
+      rel.temasCriados = novos.length;
+    }
     for (const [baseId, b] of buscas) {
       await trx('busca')
         .where({ id: b.id })

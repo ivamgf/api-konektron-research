@@ -265,7 +265,7 @@ revisoes.post(
   '/:id/etapas/:etapaId/importar',
   requirePapel(...EDITA),
   uploadCsv.single('arquivo'),
-  validate({ body: z.object({ substituir: z.enum(['true', 'false']).optional(), simular: z.enum(['true', 'false']).optional() }) }),
+  validate({ body: z.object({ substituir: z.enum(['true', 'false']).optional(), simular: z.enum(['true', 'false']).optional(), iniciar: z.enum(['true', 'false']).optional() }) }),
   async (req, res) => {
     if (!req.file) throw AppError.unprocessable('Envie o arquivo CSV no campo "arquivo"');
     const ext = (req.file.originalname.split('.').pop() ?? '').toLowerCase();
@@ -280,6 +280,7 @@ revisoes.post(
       texto: req.file.buffer.toString('utf8'),
       substituir: req.validated.body.substituir === 'true',
       simular: req.validated.body.simular === 'true',
+      iniciar: req.validated.body.iniciar === 'true',
     });
     if (relatorio.simulado) return res.json({ ...relatorio, avisos: relatorio.avisos.slice(0, 200), totalAvisos: relatorio.avisos.length });
     if (relatorio.documentosCriados) await detectarDuplicados(revisaoId, req);
