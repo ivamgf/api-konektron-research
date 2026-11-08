@@ -43,3 +43,29 @@ test('recusa CSV sem coluna de título ou vazio', () => {
   assert.throws(() => lerCsvDaEtapa('autor,ano\nA,2020\n'), /título/);
   assert.throws(() => lerCsvDaEtapa('titulo\n'), /vazio/);
 });
+
+test('planilha RIL: Situação, Base, Temas, Ref-NBR/APA, Idioma, "N/D" vazio e DOI dentro do periódico', async () => {
+  const { doiNoTexto } = await import('#modules/revisoes/importarEtapa.ts');
+  const csv = [
+    'N°,Título,Autores,Resumo,Palavras-chave,Ano,Periódico,Idioma,Link,Ref-NBR,Ref-APA,Ref-APA 2,Citações,Base,Temas,Situação',
+    '1,Toward Effective Response,"G. Mudassir; E. E. Howard",Resumo,N/D,2021,IEEE Access,Inglês,https://x/1,"MUDASSIR, G. et al. Toward.","Mudassir, G. (2021).","Mudassir, G. (2021). Acesso em.",19,IEEE Xplore,"data science, natural disasters",Selecionado',
+    '38,Methodological guidelines,"Haneef R,\nTijhuis M",Resumo,"Data linkage",2022,Arch Public Health. 2022;80(1):9. doi: 10.1186/s13690-021-00770-6.,Inglês,https://x/2,NBR,APA,APA2,15,PubMed,linked data,Excluído',
+  ].join('\n');
+  const { linhas, avisos } = lerCsvDaEtapa(csv);
+  assert.equal(avisos.length, 0);
+  assert.equal(linhas.length, 2);
+  const [a, b] = linhas;
+  assert.equal(a.decisao?.decisao, 'SELECIONADO');
+  assert.equal(a.base, 'IEEE Xplore');
+  assert.equal(a.idioma, 'Inglês');
+  assert.equal(a.palavrasChave, null, '"N/D" vira vazio');
+  assert.equal(a.citacoes, 19);
+  assert.deepEqual(a.temas, ['data science', 'natural disasters']);
+  assert.equal(a.refNbr, 'MUDASSIR, G. et al. Toward.');
+  assert.equal(a.refApa2, 'Mudassir, G. (2021). Acesso em.');
+  assert.equal(b.decisao?.decisao, 'EXCLUIDO');
+  assert.equal(b.autores, 'Haneef R,\nTijhuis M', 'campo com quebra de linha entre aspas');
+  assert.equal(b.doi, '10.1186/s13690-021-00770-6');
+  assert.equal(doiNoTexto('Lancet. doi: 10.1016/S2215-0366(16)30089-X.'), '10.1016/S2215-0366(16)30089-X');
+  assert.equal(doiNoTexto('sem doi', null), null);
+});

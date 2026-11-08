@@ -10512,6 +10512,13 @@
                       "true",
                       "false"
                     ]
+                  },
+                  "iniciar": {
+                    "type": "string",
+                    "enum": [
+                      "true",
+                      "false"
+                    ]
                   }
                 },
                 "required": [
