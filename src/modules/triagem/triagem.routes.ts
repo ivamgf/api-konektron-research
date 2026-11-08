@@ -7,26 +7,27 @@ import { AppError } from '#utils/AppError.ts';
 import { uuid } from '#utils/tokens.ts';
 import { auditar } from '#services/audit.ts';
 import { membrosDoProjeto, notificar } from '#services/notificacoes.ts';
-import { contagensEtapa, elegiveis, etapaComRevisao, recalcularSituacao } from '#modules/revisoes/revisoes.service.ts';
+import { consolidarDecisoes, contagensEtapa, elegiveis, etapaComRevisao, exigeDoisRevisores, recalcularSituacao, resolverAguardando } from '#modules/revisoes/revisoes.service.ts';
 
 // /etapas/:etapaId/... (UC08, UC09)
 const router = Router();
 router.use('/:etapaId', projectAccess('etapa', 'etapaId'));
 
-const decisaoSchema = z
-  .object({
-    decisao: z.enum(['SELECIONADO', 'EXCLUIDO']),
-    motivo: z.enum(['CRITERIO', 'DUPLICADO', 'SEM_ACESSO', 'OUTRO']).nullable().optional(),
-    criterioId: z.guid().nullable().optional(),
-    observacao: z.string().trim().max(5000).nullable().optional(),
-  })
-  // RN10: exclusão exige motivo; CRITERIO exige o critério; OUTRO exige texto
-  .superRefine((d, ctx) => {
-    if (d.decisao === 'SELECIONADO' && d.motivo) ctx.addIssue({ code: 'custom', path: ['motivo'], message: 'Selecionado não tem motivo' });
-    if (d.decisao === 'EXCLUIDO' && !d.motivo) ctx.addIssue({ code: 'custom', path: ['motivo'], message: 'Informe o motivo da exclusão (RN10)' });
-    if (d.motivo === 'CRITERIO' && !d.criterioId) ctx.addIssue({ code: 'custom', path: ['criterioId'], message: 'Escolha o critério de exclusão' });
-    if (d.motivo === 'OUTRO' && !d.observacao) ctx.addIssue({ code: 'custom', path: ['observacao'], message: 'Descreva o motivo' });
-  });
+const decisaoCampos = z.object({
+  decisao: z.enum(['SELECIONADO', 'EXCLUIDO']),
+  motivo: z.enum(['CRITERIO', 'DUPLICADO', 'SEM_ACESSO', 'OUTRO']).nullable().optional(),
+  criterioId: z.guid().nullable().optional(),
+  observacao: z.string().trim().max(5000).nullable().optional(),
+});
+// RN10: exclusão exige motivo; CRITERIO exige o critério; OUTRO exige texto
+const regrasDecisao = (d: z.infer<typeof decisaoCampos>, ctx: z.RefinementCtx) => {
+  if (d.decisao === 'SELECIONADO' && d.motivo) ctx.addIssue({ code: 'custom', path: ['motivo'], message: 'Selecionado não tem motivo' });
+  if (d.decisao === 'EXCLUIDO' && !d.motivo) ctx.addIssue({ code: 'custom', path: ['motivo'], message: 'Informe o motivo da exclusão (RN10)' });
+  if (d.motivo === 'CRITERIO' && !d.criterioId) ctx.addIssue({ code: 'custom', path: ['criterioId'], message: 'Escolha o critério de exclusão' });
+  if (d.motivo === 'OUTRO' && !d.observacao) ctx.addIssue({ code: 'custom', path: ['observacao'], message: 'Descreva o motivo' });
+};
+const decisaoSchema = decisaoCampos.superRefine(regrasDecisao);
+const decisaoEmLoteSchema = decisaoCampos.extend({ ids: z.array(z.guid()).min(1).max(2000) }).superRefine(regrasDecisao);
 
 async function conferirCriterio(req: Request, criterioId?: string | null) {
   if (!criterioId) return;
@@ -35,37 +36,6 @@ async function conferirCriterio(req: Request, criterioId?: string | null) {
     .where({ 'c.id': criterioId, 'p.projetoId': req.projeto!.id, 'c.tipo': 'EXCLUSAO' })
     .first('c.id');
   if (!c) throw AppError.unprocessable('O critério precisa ser um critério de exclusão do protocolo deste projeto');
-}
-
-// Consolida as decisões dos revisores no resultado da etapa (RN12)
-async function consolidar(trx: Trx, rdId: string, etapa: any) {
-  const decisoes = await trx('triagemDecisao').where({ revisaoDocumentoId: rdId, revisaoEtapaId: etapa.id }).orderBy('decididoEm');
-  let resultado: Record<string, unknown>;
-  if (!decisoes.length) {
-    await trx('triagemResultado').where({ revisaoDocumentoId: rdId, revisaoEtapaId: etapa.id }).del();
-    return null;
-  }
-  const atual = await trx('triagemResultado').where({ revisaoDocumentoId: rdId, revisaoEtapaId: etapa.id }).first();
-  if (atual?.resolvidoPor) return atual; // desempate do orientador prevalece
-  const ultima = decisoes.at(-1);
-  if (etapa.doisRevisores && etapa.exigeTriagem) {
-    if (decisoes.length < 2) resultado = { decisaoFinal: null, motivo: null, criterioId: null, conflito: false };
-    else {
-      const [a, b] = decisoes.slice(-2);
-      const concordam = a.decisao === b.decisao;
-      resultado = concordam
-        ? { decisaoFinal: b.decisao, motivo: b.motivo, criterioId: b.criterioId, conflito: false }
-        : { decisaoFinal: null, motivo: null, criterioId: null, conflito: true };
-    }
-  } else {
-    resultado = { decisaoFinal: ultima.decisao, motivo: ultima.motivo, criterioId: ultima.criterioId, conflito: false };
-  }
-  await trx('triagemResultado')
-    .insert({ revisaoDocumentoId: rdId, revisaoEtapaId: etapa.id, ...resultado })
-    .onConflict()
-    .merge(['decisaoFinal', 'motivo', 'criterioId', 'conflito']);
-  await atualizarSituacao(trx, rdId);
-  return trx('triagemResultado').where({ revisaoDocumentoId: rdId, revisaoEtapaId: etapa.id }).first();
 }
 
 // Excluído em qualquer etapa: EXCLUIDO; com a inclusão concluída e selecionado: INCLUIDO; senão EM_TRIAGEM
@@ -77,11 +47,12 @@ async function atualizarSituacao(trx: Trx, rdId: string) {
 // RN09: documentos elegíveis da etapa, com a decisão do usuário e o resultado
 router.get(
   '/:etapaId/documentos',
-  validate({ query: z.object({ filtro: z.enum(['todos', 'pendentes', 'minhas-pendentes', 'selecionados', 'excluidos', 'conflitos']).optional() }) }),
+  validate({ query: z.object({ filtro: z.enum(['todos', 'pendentes', 'minhas-pendentes', 'selecionados', 'excluidos', 'conflitos', 'aguardando']).optional() }) }),
   async (req, res) => {
     const etapa = await etapaComRevisao(String(req.params.etapaId));
     if (!etapa.exigeTriagem && !etapa.permiteExclusao) throw AppError.unprocessable('Esta etapa não tem triagem');
     const filtro = req.validated.query.filtro ?? 'todos';
+    await resolverAguardando(etapa);
     const q = elegiveis(etapa)
       .join('documento as d', 'd.id', 'rd.documentoId')
       .leftJoin('busca as b', 'b.id', 'rd.buscaId')
@@ -118,56 +89,93 @@ router.get(
     if (filtro === 'selecionados') q.where('tr.decisaoFinal', 'SELECIONADO');
     if (filtro === 'excluidos') q.where('tr.decisaoFinal', 'EXCLUIDO');
     if (filtro === 'conflitos') q.where('tr.conflito', true);
-    res.json({ etapa, contagens: await contagensEtapa(etapa), documentos: await q });
+    if (filtro === 'aguardando') q.whereNotNull('tr.revisaoDocumentoId').whereNull('tr.decisaoFinal').where('tr.conflito', false);
+    // doisRevisores: se a segunda decisão é exigida de fato (RN12; com um só membro que decide, não)
+    res.json({ etapa, doisRevisores: await exigeDoisRevisores(db, etapa), contagens: await contagensEtapa(etapa), documentos: await q });
   },
 );
+
+type Etapa = Awaited<ReturnType<typeof etapaComRevisao>>;
+
+function conferirEtapa(etapa: Etapa) {
+  // decisões podem ser corrigidas também depois de a etapa ser concluída
+  if (etapa.status !== 'EM_ANDAMENTO' && etapa.status !== 'CONCLUIDA') throw AppError.conflict('A etapa não foi iniciada ou foi dispensada');
+  if (!etapa.exigeTriagem && !etapa.permiteExclusao) throw AppError.unprocessable('Esta etapa não aceita decisões');
+}
+
+/** Grava a mesma decisão do usuário para vários documentos e consolida o resultado */
+async function decidir(req: Request, etapa: Etapa, rdIds: string[], d: z.infer<typeof decisaoCampos>) {
+  return db.transaction(async (trx) => {
+    if (!etapa.exigeTriagem && d.decisao === 'SELECIONADO') {
+      // etapas que só permitem exclusão (ex.: duplicados): "selecionado" desfaz a exclusão
+      await trx('triagemDecisao').where({ revisaoEtapaId: etapa.id }).whereIn('revisaoDocumentoId', rdIds).del();
+      await trx('triagemResultado').where({ revisaoEtapaId: etapa.id }).whereIn('revisaoDocumentoId', rdIds).del();
+      await trx('revisaoDocumento').whereIn('id', rdIds).update({ duplicadoDeId: null });
+      await recalcularSituacao(trx, etapa.revisaoId, rdIds);
+      return { novosConflitos: [] as string[] };
+    }
+    const agora = new Date();
+    for (let i = 0; i < rdIds.length; i += 500) {
+      await trx('triagemDecisao')
+        .insert(
+          rdIds.slice(i, i + 500).map((rdId) => ({
+            id: uuid(),
+            revisaoDocumentoId: rdId,
+            revisaoEtapaId: etapa.id,
+            revisorId: req.user!.id,
+            decisao: d.decisao,
+            motivo: d.motivo ?? null,
+            criterioId: d.criterioId ?? null,
+            observacao: d.observacao ?? null,
+            decididoEm: agora,
+          })),
+        )
+        .onConflict()
+        .merge(['decisao', 'motivo', 'criterioId', 'observacao', 'decididoEm']);
+    }
+    const r = await consolidarDecisoes(trx, etapa, rdIds);
+    await auditar(
+      { req, entidade: 'triagem_decisao', entidadeId: rdIds.length === 1 ? rdIds[0] : etapa.id, acao: 'DECIDIR', depois: { etapaId: etapa.id, ...d, documentos: rdIds.length > 1 ? rdIds : undefined } },
+      trx,
+    );
+    if (r.novosConflitos.length) {
+      const orientadores = await membrosDoProjeto(req.projeto!.id, ['ORIENTADOR', 'RESPONSAVEL'], trx);
+      await notificar(orientadores, 'CONFLITO', `${r.novosConflitos.length} conflito(s) de triagem em "${etapa.nome}"`, { etapaId: etapa.id, revisaoDocumentoId: r.novosConflitos[0] }, trx);
+    }
+    return r;
+  });
+}
 
 // RF29: decisão de triagem
 router.put('/:etapaId/documentos/:rdId/decisao', requirePapel(...EDITA), validate({ body: decisaoSchema }), async (req, res) => {
   const etapa = await etapaComRevisao(String(req.params.etapaId));
   const rdId = String(req.params.rdId);
-  // decisões podem ser corrigidas também depois de a etapa ser concluída
-  if (etapa.status !== 'EM_ANDAMENTO' && etapa.status !== 'CONCLUIDA') throw AppError.conflict('A etapa não foi iniciada ou foi dispensada');
-  if (!etapa.exigeTriagem && !etapa.permiteExclusao) throw AppError.unprocessable('Esta etapa não aceita decisões');
-  if (!etapa.exigeTriagem && req.validated.body.decisao === 'SELECIONADO') {
-    // etapas que só permitem exclusão (ex.: duplicados): "selecionado" desfaz a exclusão
-    await db.transaction(async (trx) => {
-      await trx('triagemDecisao').where({ revisaoDocumentoId: rdId, revisaoEtapaId: etapa.id }).del();
-      await trx('triagemResultado').where({ revisaoDocumentoId: rdId, revisaoEtapaId: etapa.id }).del();
-      await trx('revisaoDocumento').where({ id: rdId }).update({ duplicadoDeId: null });
-      await atualizarSituacao(trx, rdId);
-    });
-    return res.json({ resultado: null, contagens: await contagensEtapa(etapa) });
-  }
-  const elegivel = await elegiveis(etapa).where('rd.id', rdId).first('rd.id');
-  if (!elegivel) throw AppError.unprocessable('O documento não está elegível nesta etapa (RN09)', undefined, 'NAO_ELEGIVEL');
+  conferirEtapa(etapa);
   const d = req.validated.body;
+  if (etapa.exigeTriagem || d.decisao === 'EXCLUIDO') {
+    const elegivel = await elegiveis(etapa).where('rd.id', rdId).first('rd.id');
+    if (!elegivel) throw AppError.unprocessable('O documento não está elegível nesta etapa (RN09)', undefined, 'NAO_ELEGIVEL');
+  }
   await conferirCriterio(req, d.criterioId);
-
-  const resultado = await db.transaction(async (trx) => {
-    await trx('triagemDecisao')
-      .insert({
-        id: uuid(),
-        revisaoDocumentoId: rdId,
-        revisaoEtapaId: etapa.id,
-        revisorId: req.user!.id,
-        decisao: d.decisao,
-        motivo: d.motivo ?? null,
-        criterioId: d.criterioId ?? null,
-        observacao: d.observacao ?? null,
-        decididoEm: new Date(),
-      })
-      .onConflict()
-      .merge(['decisao', 'motivo', 'criterioId', 'observacao', 'decididoEm']);
-    const r = await consolidar(trx, rdId, etapa);
-    await auditar({ req, entidade: 'triagem_decisao', entidadeId: rdId, acao: 'DECIDIR', depois: { etapaId: etapa.id, ...d } }, trx);
-    if (r?.conflito) {
-      const orientadores = await membrosDoProjeto(req.projeto!.id, ['ORIENTADOR', 'RESPONSAVEL'], trx);
-      await notificar(orientadores, 'CONFLITO', `Conflito de triagem em "${etapa.nome}"`, { etapaId: etapa.id, revisaoDocumentoId: rdId }, trx);
-    }
-    return r;
-  });
+  await decidir(req, etapa, [rdId], d);
+  const resultado = (await db('triagemResultado').where({ revisaoDocumentoId: rdId, revisaoEtapaId: etapa.id }).first()) ?? null;
   res.json({ resultado, contagens: await contagensEtapa(etapa) });
+});
+
+// Mesma decisão (e mesmo motivo) para vários documentos marcados na lista
+router.put('/:etapaId/decisoes', requirePapel(...EDITA), validate({ body: decisaoEmLoteSchema }), async (req, res) => {
+  const etapa = await etapaComRevisao(String(req.params.etapaId));
+  conferirEtapa(etapa);
+  const { ids, ...d } = req.validated.body;
+  const pedidos = [...new Set<string>(ids)];
+  const validos: string[] = [];
+  for (let i = 0; i < pedidos.length; i += 500) {
+    validos.push(...(await elegiveis(etapa).whereIn('rd.id', pedidos.slice(i, i + 500)).pluck('rd.id')));
+  }
+  if (!validos.length) throw AppError.unprocessable('Nenhum dos documentos está elegível nesta etapa (RN09)', undefined, 'NAO_ELEGIVEL');
+  await conferirCriterio(req, d.criterioId);
+  const r = await decidir(req, etapa, validos, d);
+  res.json({ decididos: validos.length, ignorados: pedidos.length - validos.length, conflitos: r.novosConflitos.length, contagens: await contagensEtapa(etapa) });
 });
 
 // RF30/UC09: conflitos e desempate

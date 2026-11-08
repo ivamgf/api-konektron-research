@@ -3632,6 +3632,117 @@
         ]
       }
     },
+    "/etapas/{etapaId}/decisoes": {
+      "put": {
+        "tags": [
+          "Triagem"
+        ],
+        "operationId": "putEtapasByetapaIdDecisoes",
+        "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "etapaId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "decisao": {
+                    "type": "string",
+                    "enum": [
+                      "SELECIONADO",
+                      "EXCLUIDO"
+                    ]
+                  },
+                  "motivo": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "CRITERIO",
+                          "DUPLICADO",
+                          "SEM_ACESSO",
+                          "OUTRO"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "criterioId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "observacao": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 5000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "ids": {
+                    "minItems": 1,
+                    "maxItems": 2000,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                },
+                "required": [
+                  "decisao",
+                  "ids"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        },
+        "x-papeis": [
+          "RESPONSAVEL",
+          "COLABORADOR"
+        ]
+      }
+    },
     "/etapas/{etapaId}/documentos": {
       "get": {
         "tags": [
@@ -3661,7 +3772,8 @@
                 "minhas-pendentes",
                 "selecionados",
                 "excluidos",
-                "conflitos"
+                "conflitos",
+                "aguardando"
               ]
             }
           }
@@ -3780,9 +3892,6 @@
             "$ref": "#/components/responses/Erro"
           },
           "404": {
-            "$ref": "#/components/responses/Erro"
-          },
-          "409": {
             "$ref": "#/components/responses/Erro"
           },
           "422": {
@@ -10227,7 +10336,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -10243,11 +10352,17 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "origem": {
+                    "type": "string",
+                    "enum": [
+                      "BUSCA",
+                      "REVISAO_ANTERIOR",
+                      "INTEGRADO",
+                      "MANUAL"
+                    ]
                   }
-                },
-                "required": [
-                  "categoriaId"
-                ]
+                }
               }
             }
           }
@@ -10518,6 +10633,14 @@
                     "enum": [
                       "true",
                       "false"
+                    ]
+                  },
+                  "origem": {
+                    "type": "string",
+                    "enum": [
+                      "BUSCA",
+                      "REVISAO_ANTERIOR",
+                      "INTEGRADO"
                     ]
                   }
                 },

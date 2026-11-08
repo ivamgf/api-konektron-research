@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lerCsvDaEtapa } from '#modules/revisoes/importarEtapa.ts';
+import { lerCsvDaEtapa, origemDoTexto } from '#modules/revisoes/importarEtapa.ts';
 
 test('lê documentos com decisão, motivo, critério e base (ponto e vírgula, acentos no cabeçalho)', () => {
   const { linhas, avisos } = lerCsvDaEtapa(
@@ -68,4 +68,25 @@ test('planilha RIL: Situação, Base, Temas, Ref-NBR/APA, Idioma, "N/D" vazio e 
   assert.equal(b.doi, '10.1186/s13690-021-00770-6');
   assert.equal(doiNoTexto('Lancet. doi: 10.1016/S2215-0366(16)30089-X.'), '10.1016/S2215-0366(16)30089-X');
   assert.equal(doiNoTexto('sem doi', null), null);
+});
+
+test('coluna Origem marca revisão anterior e integrados (fonte secundária)', () => {
+  const { linhas, avisos } = lerCsvDaEtapa(
+    [
+      'Título,Origem,Situação',
+      'A,Revisão anterior,',
+      'B,Integrados,',
+      'C,fonte  secundária,',
+      'D,Busca,Selecionado',
+      'E,,Excluído',
+      'F,outra coisa,',
+    ].join('\n'),
+  );
+  assert.deepEqual(
+    linhas.map((l) => l.origem),
+    ['REVISAO_ANTERIOR', 'INTEGRADO', 'INTEGRADO', 'BUSCA', null, null],
+  );
+  assert.ok(avisos.some((a) => a.linha === 7 && /outra coisa/.test(a.mensagem)));
+  assert.equal(origemDoTexto('INTEGRADO'), 'INTEGRADO');
+  assert.equal(origemDoTexto('revisao_anterior'), 'REVISAO_ANTERIOR');
 });
