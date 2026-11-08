@@ -7,7 +7,7 @@ import { AppError } from '#utils/AppError.ts';
 import { uuid } from '#utils/tokens.ts';
 import { auditar } from '#services/audit.ts';
 import { membrosDoProjeto, notificar } from '#services/notificacoes.ts';
-import { contagensEtapa, elegiveis, etapaComRevisao } from '#modules/revisoes/revisoes.service.ts';
+import { contagensEtapa, elegiveis, etapaComRevisao, recalcularSituacao } from '#modules/revisoes/revisoes.service.ts';
 
 // /etapas/:etapaId/... (UC08, UC09)
 const router = Router();
@@ -68,12 +68,10 @@ async function consolidar(trx: Trx, rdId: string, etapa: any) {
   return trx('triagemResultado').where({ revisaoDocumentoId: rdId, revisaoEtapaId: etapa.id }).first();
 }
 
-// Excluído em qualquer etapa: situação EXCLUIDO; senão volta a EM_TRIAGEM (a inclusão é marcada ao concluir a etapa de inclusão)
+// Excluído em qualquer etapa: EXCLUIDO; com a inclusão concluída e selecionado: INCLUIDO; senão EM_TRIAGEM
 async function atualizarSituacao(trx: Trx, rdId: string) {
-  const exc = await trx('triagemResultado').where({ revisaoDocumentoId: rdId, decisaoFinal: 'EXCLUIDO' }).first('revisaoEtapaId');
-  const rd = await trx('revisaoDocumento').where({ id: rdId }).first('situacao', 'duplicadoDeId');
-  if (exc) await trx('revisaoDocumento').where({ id: rdId }).update({ situacao: 'EXCLUIDO' });
-  else if (rd?.situacao === 'EXCLUIDO' && !rd.duplicadoDeId) await trx('revisaoDocumento').where({ id: rdId }).update({ situacao: 'EM_TRIAGEM' });
+  const rd = await trx('revisaoDocumento').where({ id: rdId }).first('revisaoId');
+  if (rd) await recalcularSituacao(trx, rd.revisaoId, [rdId]);
 }
 
 // RN09: documentos elegíveis da etapa, com a decisão do usuário e o resultado
@@ -128,7 +126,8 @@ router.get(
 router.put('/:etapaId/documentos/:rdId/decisao', requirePapel(...EDITA), validate({ body: decisaoSchema }), async (req, res) => {
   const etapa = await etapaComRevisao(String(req.params.etapaId));
   const rdId = String(req.params.rdId);
-  if (etapa.status !== 'EM_ANDAMENTO') throw AppError.conflict('A etapa não está em andamento');
+  // decisões podem ser corrigidas também depois de a etapa ser concluída
+  if (etapa.status !== 'EM_ANDAMENTO' && etapa.status !== 'CONCLUIDA') throw AppError.conflict('A etapa não foi iniciada ou foi dispensada');
   if (!etapa.exigeTriagem && !etapa.permiteExclusao) throw AppError.unprocessable('Esta etapa não aceita decisões');
   if (!etapa.exigeTriagem && req.validated.body.decisao === 'SELECIONADO') {
     // etapas que só permitem exclusão (ex.: duplicados): "selecionado" desfaz a exclusão

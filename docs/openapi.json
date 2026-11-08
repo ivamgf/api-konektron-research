@@ -10380,6 +10380,39 @@
                     "minLength": 1,
                     "maxLength": 120
                   },
+                  "exigeTriagem": {
+                    "type": "boolean"
+                  },
+                  "permiteExclusao": {
+                    "type": "boolean"
+                  },
+                  "iniciadaEm": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "concluidaEm": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "justificativaDispensa": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 5000
+                  },
                   "justificativa": {
                     "type": "string",
                     "minLength": 3,
@@ -10404,6 +10437,89 @@
             "$ref": "#/components/responses/Erro"
           },
           "409": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        },
+        "x-papeis": [
+          "RESPONSAVEL",
+          "COLABORADOR"
+        ]
+      }
+    },
+    "/revisoes/{id}/etapas/{etapaId}/importar": {
+      "post": {
+        "tags": [
+          "Revisões"
+        ],
+        "operationId": "postRevisoesByidEtapasByetapaIdImportar",
+        "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          },
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "etapaId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "arquivo": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "substituir": {
+                    "type": "string",
+                    "enum": [
+                      "true",
+                      "false"
+                    ]
+                  },
+                  "simular": {
+                    "type": "string",
+                    "enum": [
+                      "true",
+                      "false"
+                    ]
+                  }
+                },
+                "required": [
+                  "arquivo"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
             "$ref": "#/components/responses/Erro"
           },
           "422": {

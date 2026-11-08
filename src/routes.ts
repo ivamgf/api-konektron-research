@@ -18,6 +18,7 @@ import { documentos, documentosDoProjeto } from '#modules/documentos/documentos.
 import triagemRoutes from '#modules/triagem/triagem.routes.ts';
 import { analiseDocumentos, analises, analisesDoProjeto } from '#modules/analises/analises.routes.ts';
 import { apoio, apoioDoProjeto, downloadLocal } from '#modules/apoio/apoio.routes.ts';
+import { disposicao } from '#services/storage/disposicao.ts';
 
 const router = Router();
 
@@ -40,7 +41,9 @@ router.get('/health', async (_req, res) => {
 router.use('/auth', authRoutes);
 router.get('/arquivos/download', validate({ query: z.object({ token: z.string().min(10) }) }), async (req, res) => {
   const a = await downloadLocal(req.validated.query.token);
-  res.setHeader('Content-Disposition', `attachment; filename="${a.nome.replace(/"/g, '')}"`);
+  res.setHeader('Content-Disposition', disposicao(a.nome, a.mimeType));
+  // o CSP do helmet (object-src 'none') impede o leitor de PDF do navegador de exibir o arquivo
+  if (a.mimeType === 'application/pdf') res.removeHeader('Content-Security-Policy');
   res.type(a.mimeType).send(a.dados);
 });
 

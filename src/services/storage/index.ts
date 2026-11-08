@@ -7,8 +7,8 @@ export interface StorageProvider {
   put(chave: string, dados: Buffer, mimeType: string): Promise<void>;
   get(chave: string): Promise<Buffer>;
   remove(chave: string): Promise<void>;
-  /** URL de download válida por `minutos` (RN18: 15 min) */
-  urlAssinada(chave: string, minutos?: number, nomeArquivo?: string): Promise<string>;
+  /** URL de download válida por `minutos` (RN18: 15 min); PDF abre no navegador (inline) */
+  urlAssinada(chave: string, minutos?: number, nomeArquivo?: string, mimeType?: string): Promise<string>;
 }
 
 let instance: StorageProvider | undefined;
