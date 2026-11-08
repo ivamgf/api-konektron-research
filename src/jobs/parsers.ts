@@ -164,29 +164,51 @@ const COLUNAS: Record<keyof Omit<Registro, 'bruto'>, string[]> = {
   idioma: ['idioma', 'language', 'la'],
 };
 
-export function tabelaParaRegistros(linhas: unknown[][]): Resultado {
+/**
+ * Linha do cabeçalho: a primeira (entre as 10 primeiras) com a coluna de título. Planilhas exportadas
+ * por aba costumam ter antes uma linha com o nome da aba (ex.: "Integrados,,,,").
+ */
+export function indiceDoCabecalho(linhas: unknown[][]) {
+  const i = linhas.slice(0, 10).findIndex((l) => l.some((h) => COLUNAS.titulo.includes(semAcento(String(h ?? '')))));
+  return Math.max(0, i);
+}
+
+// "~220+", "1.234", "85" → número; texto sem número → null
+export function numeroDeCitacoes(v: string | null) {
+  const m = v?.match(/\d[\d.,]*/);
+  if (!m) return null;
+  const n = Number(m[0].replace(/[.,]/g, ''));
+  return Number.isFinite(n) && n <= 4_000_000_000 ? n : null;
+}
+
+// quebras de linha e espaços repetidos dentro da célula (títulos e referências copiados de PDF)
+export const umaLinha = (v: string | null) => (v ? v.replace(/\s+/g, ' ').trim() || null : null);
+
+export function tabelaParaRegistros(todas: unknown[][]): Resultado {
   const registros: Registro[] = [];
   const erros: Resultado['erros'] = [];
-  if (!linhas.length) return { registros, erros };
+  if (!todas.length) return { registros, erros };
+  const inicio = indiceDoCabecalho(todas);
+  const linhas = todas.slice(inicio);
   const cab = linhas[0].map((h) => semAcento(String(h ?? '')));
   const idx = Object.fromEntries(Object.entries(COLUNAS).map(([k, nomes]) => [k, cab.findIndex((h) => nomes.includes(h))])) as Record<string, number>;
   if (idx.titulo < 0) return { registros, erros: [{ linha: 1, mensagem: 'coluna de título não encontrada no cabeçalho' }] };
   linhas.slice(1).forEach((l, i) => {
     const v = (k: string) => (idx[k] >= 0 ? String(l[idx[k]] ?? '').trim() || null : null);
-    const titulo = v('titulo');
-    if (!titulo) return erros.push({ linha: i + 2, mensagem: 'linha sem título' });
-    const cit = v('citacoes');
+    const titulo = umaLinha(v('titulo'));
+    if (!titulo) return erros.push({ linha: inicio + i + 2, mensagem: 'linha sem título' });
     registros.push({
       titulo,
-      autores: v('autores'),
+      autores: umaLinha(v('autores')),
       resumo: v('resumo'),
-      palavrasChave: v('palavrasChave'),
+      // palavras-chave uma por linha viram separadas por ";"
+      palavrasChave: umaLinha(v('palavrasChave')?.split(/\s*[\r\n]+\s*/).filter(Boolean).join('; ') ?? null),
       ano: ano(v('ano')),
-      periodico: v('periodico'),
+      periodico: umaLinha(v('periodico')),
       doi: v('doi'),
       link: v('link'),
-      citacoes: cit && /^\d+$/.test(cit) ? Number(cit) : null,
-      tipo: v('tipo'),
+      citacoes: numeroDeCitacoes(v('citacoes')),
+      tipo: umaLinha(v('tipo')),
       idioma: v('idioma'),
       bruto: Object.fromEntries(cab.map((h, k) => [h || `coluna${k + 1}`, l[k] ?? null])),
     });
