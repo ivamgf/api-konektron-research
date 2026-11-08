@@ -12,7 +12,7 @@ import { auditar } from '#services/audit.ts';
 import { salvarArquivo } from '#services/arquivos.ts';
 import { enfileirar } from '#services/fila.ts';
 import { eSistematico } from '#modules/tipos-revisao/tiposRevisao.service.ts';
-import { contagensEtapa, copiarChecklist, elegiveis, instanciarEtapas, painel } from './revisoes.service.ts';
+import { contagensEtapa, copiarChecklist, elegiveis, instanciarEtapas, painel, recalcularSituacao, reconsolidarRevisao, resolverAguardando } from './revisoes.service.ts';
 import { fluxogramaSvg } from './fluxograma.ts';
 import { importarCsvDaEtapa } from './importarEtapa.ts';
 import { detectarDuplicados } from '#modules/documentos/duplicados.ts';
@@ -135,6 +135,8 @@ revisoes.patch(
         await trx('revisao').where({ id }).update({ etapaAtualId: etapas[0].id });
       }
       if (Object.keys(resto).length) await trx('revisao').where({ id }).update(resto);
+      // RN12: ligar/desligar os dois revisores refaz os resultados das triagens com as decisões já gravadas
+      if (resto.doisRevisores !== undefined && !!resto.doisRevisores !== !!r.doisRevisores) await reconsolidarRevisao(trx, id);
     });
     res.json(await detalhe(id));
   },
@@ -188,6 +190,11 @@ revisoes.patch(
     const revisaoId = String(req.params.id);
     const etapaId = String(req.params.etapaId);
     const { acao, justificativa, ...dados } = req.validated.body;
+    if (acao === 'CONCLUIR') {
+      // decisões que esperam um 2º revisor que o projeto não tem viram finais antes de conferir (RN12)
+      const et = await db('revisaoEtapa as e').join('revisao as r', 'r.id', 'e.revisaoId').where({ 'e.id': etapaId, 'e.revisaoId': revisaoId }).first('e.*', 'r.doisRevisores');
+      if (et) await resolverAguardando({ ...et, projetoId: req.projeto!.id });
+    }
     await db.transaction(async (trx) => {
       const etapas = await trx('revisaoEtapa').where({ revisaoId }).orderBy('ordem').forUpdate();
       const e = etapas.find((x: any) => x.id === etapaId);
@@ -225,7 +232,10 @@ revisoes.patch(
         if (acao === 'CONCLUIR' && (e.exigeTriagem || e.permiteExclusao)) {
           const c = await contagensEtapa(e);
           if (c.conflitos) throw AppError.conflict(`Há ${c.conflitos} conflito(s) de triagem abertos (RN12)`, c);
-          if (e.exigeTriagem && c.semDecisao) throw AppError.conflict(`Há ${c.semDecisao} documento(s) sem decisão nesta etapa`, c);
+          if (e.exigeTriagem && c.semDecisao) {
+            const espera = c.aguardandoRevisor ? ` (${c.aguardandoRevisor} com decisão de um revisor, aguardando o segundo — a revisão está configurada com dois revisores)` : '';
+            throw AppError.conflict(`Há ${c.semDecisao} documento(s) sem decisão final nesta etapa${espera}`, c);
+          }
         }
         if (acao === 'CONCLUIR' && e.categoria === 'INCLUSAO') await marcarIncluidos(trx, revisaoId, e.ordem);
         await trx('revisaoEtapa')
@@ -265,7 +275,7 @@ revisoes.post(
   '/:id/etapas/:etapaId/importar',
   requirePapel(...EDITA),
   uploadCsv.single('arquivo'),
-  validate({ body: z.object({ substituir: z.enum(['true', 'false']).optional(), simular: z.enum(['true', 'false']).optional(), iniciar: z.enum(['true', 'false']).optional() }) }),
+  validate({ body: z.object({ substituir: z.enum(['true', 'false']).optional(), simular: z.enum(['true', 'false']).optional(), iniciar: z.enum(['true', 'false']).optional(), origem: z.enum(['BUSCA', 'REVISAO_ANTERIOR', 'INTEGRADO']).optional() }) }),
   async (req, res) => {
     if (!req.file) throw AppError.unprocessable('Envie o arquivo CSV no campo "arquivo"');
     const ext = (req.file.originalname.split('.').pop() ?? '').toLowerCase();
@@ -281,6 +291,7 @@ revisoes.post(
       substituir: req.validated.body.substituir === 'true',
       simular: req.validated.body.simular === 'true',
       iniciar: req.validated.body.iniciar === 'true',
+      origem: req.validated.body.origem,
     });
     if (relatorio.simulado) return res.json({ ...relatorio, avisos: relatorio.avisos.slice(0, 200), totalAvisos: relatorio.avisos.length });
     if (relatorio.documentosCriados) await detectarDuplicados(revisaoId, req);
@@ -411,10 +422,22 @@ revisoes.post(
 revisoes.patch(
   '/:id/documentos/:rdId',
   requirePapel(...EDITA),
-  validate({ body: z.object({ categoriaId: z.guid().nullable() }) }),
+  validate({
+    body: z
+      .object({ categoriaId: z.guid().nullable().optional(), origem: z.enum(['BUSCA', 'REVISAO_ANTERIOR', 'INTEGRADO', 'MANUAL']).optional() })
+      .refine((b) => Object.keys(b).length > 0, 'Nada para alterar'),
+  }),
   async (req, res) => {
-    const n = await db('revisaoDocumento').where({ id: String(req.params.rdId), revisaoId: String(req.params.id) }).update(req.validated.body);
-    if (!n) throw AppError.notFound('Documento da revisão');
+    const revisaoId = String(req.params.id);
+    const rdId = String(req.params.rdId);
+    await db.transaction(async (trx) => {
+      const n = await trx('revisaoDocumento').where({ id: rdId, revisaoId }).update(req.validated.body);
+      if (!n) throw AppError.notFound('Documento da revisão');
+      // revisão anterior e integrados entram direto como incluídos; busca/manual voltam à triagem
+      const { origem } = req.validated.body;
+      if (origem === 'REVISAO_ANTERIOR' || origem === 'INTEGRADO') await trx('revisaoDocumento').where({ id: rdId }).update({ situacao: 'INCLUIDO' });
+      else if (origem) await recalcularSituacao(trx, revisaoId, [rdId]);
+    });
     res.json(await db('revisaoDocumento').where({ id: String(req.params.rdId) }).first());
   },
 );

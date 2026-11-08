@@ -35,8 +35,10 @@ type Decisao = {
   criterio: string | null;
   observacao: string | null;
 };
+export type Origem = 'BUSCA' | 'REVISAO_ANTERIOR' | 'INTEGRADO';
 type Linha = Registro & {
   linha: number;
+  origem: Origem | null;
   base: string | null;
   decisao: Decisao | null;
   refNbr: string | null;
@@ -52,6 +54,8 @@ export type Relatorio = {
   decisoes: { selecionados: number; excluidos: number; semDecisao: number };
   selecionadosEmEtapasAnteriores: number;
   temasCriados?: number;
+  /** documentos marcados como revisão anterior / integrados (entram incluídos, sem triagem) */
+  outrasOrigens?: { revisaoAnterior: number; integrados: number };
   avisos: { linha: number; mensagem: string }[];
 };
 
@@ -67,7 +71,30 @@ const EXTRAS = {
   refApa: ['ref-apa', 'ref apa', 'referencia apa', 'apa'],
   refApa2: ['ref-apa 2', 'ref-apa2', 'ref apa 2', 'referencia apa 2'],
   temas: ['temas', 'tema', 'themes', 'topics'],
+  origem: ['origem', 'origem do documento', 'tipo de origem', 'origin'],
 };
+
+// coluna Origem: revisão anterior, integrados (fonte secundária) ou busca
+const ORIGENS: Record<string, Origem> = {
+  'revisao anterior': 'REVISAO_ANTERIOR',
+  revisao_anterior: 'REVISAO_ANTERIOR',
+  anterior: 'REVISAO_ANTERIOR',
+  'previous review': 'REVISAO_ANTERIOR',
+  integrado: 'INTEGRADO',
+  integrados: 'INTEGRADO',
+  integrada: 'INTEGRADO',
+  integradas: 'INTEGRADO',
+  integrated: 'INTEGRADO',
+  'fonte secundaria': 'INTEGRADO',
+  secundaria: 'INTEGRADO',
+  'secondary source': 'INTEGRADO',
+  busca: 'BUSCA',
+  search: 'BUSCA',
+  triagem: 'BUSCA',
+  'base de dados': 'BUSCA',
+};
+export const origemDoTexto = (v: string | null | undefined): Origem | null =>
+  v ? (ORIGENS[semAcento(v).replace(/\s+/g, ' ')] ?? null) : null;
 
 // células que a planilha usa para "sem valor"
 const VAZIO = new Set(['n/d', 'nd', 'n/a', 'na', 'nan', '-', '--', 'null', 'none']);
@@ -147,6 +174,7 @@ export function lerCsvDaEtapa(texto: string): { linhas: Linha[]; avisos: Relator
     refApa: col('refApa'),
     refApa2: col('refApa2'),
     temas: col('temas'),
+    origem: col('origem'),
   };
   const avisos = [...erros];
   // tabelaParaRegistros pula linhas sem título: refaz o mapeamento linha → registro pela ordem
@@ -189,6 +217,13 @@ export function lerCsvDaEtapa(texto: string): { linhas: Linha[]; avisos: Relator
     const limpo = Object.fromEntries(
       Object.entries(r).map(([k, x]) => [k, typeof x === 'string' ? vazio(x) : x]),
     ) as Registro;
+    const origemTxt = vazio(v(idx.origem));
+    const origem = origemDoTexto(origemTxt);
+    if (origemTxt && !origem)
+      avisos.push({
+        linha: n,
+        mensagem: `origem "${origemTxt}" não reconhecida (use Busca, Revisão anterior ou Integrado); usada a origem escolhida na importação`,
+      });
     const refNbr = vazio(v(idx.refNbr));
     const refApa = vazio(v(idx.refApa));
     return {
@@ -196,6 +231,7 @@ export function lerCsvDaEtapa(texto: string): { linhas: Linha[]; avisos: Relator
       titulo: r.titulo,
       doi: limpo.doi ?? doiNoTexto(limpo.periodico, limpo.link, refNbr, refApa),
       linha: n,
+      origem,
       base: vazio(v(idx.base)),
       decisao,
       refNbr,
@@ -283,6 +319,8 @@ export async function importarCsvDaEtapa(o: {
    * app (ex.: planilha RIL com F1, F2 e F3), em que busca e deduplicação também já aconteceram.
    */
   iniciar?: boolean;
+  /** origem dos documentos sem a coluna "Origem" (padrão: busca, que passa pela triagem) */
+  origem?: Origem;
 }): Promise<Relatorio & { simulado: boolean }> {
   const { linhas, avisos } = lerCsvDaEtapa(o.texto);
   let simulado: Relatorio | undefined;
@@ -351,7 +389,7 @@ async function importar(
     const daRevisao = await trx('revisaoDocumento as rd')
       .join('documento as d', 'd.id', 'rd.documentoId')
       .where('rd.revisaoId', o.revisaoId)
-      .select('rd.id as rdId', 'd.id', 'd.doi', 'd.tituloNormalizado');
+      .select('rd.id as rdId', 'rd.origem', 'd.id', 'd.doi', 'd.tituloNormalizado');
     const doProjeto = await trx('documento')
       .where({ projetoId: o.projetoId })
       .select('id', 'doi', 'tituloNormalizado');
@@ -430,14 +468,26 @@ async function importar(
     const porRd = new Map<string, Linha>(); // última linha de cada documento (linhas repetidas: vale a última)
     const novosDocs: Record<string, unknown>[] = [];
     const novosRds: Record<string, unknown>[] = [];
+    // revisão anterior e integrados: entram como incluídos, sem busca e sem triagem (UC07 5a)
+    const especiais = new Map<string, Origem>();
+    const marcarOrigem: Record<string, string[]> = { REVISAO_ANTERIOR: [], INTEGRADO: [], BUSCA: [] };
     for (const l of linhas) {
       const doi = limparDoi(l.doi);
       const tituloNormalizado = normalizarTitulo(l.titulo);
-      let rdId: string | undefined = naRevisao.buscar(doi, tituloNormalizado)?.rdId;
-      if (rdId) rel.documentosDaRevisao++;
-      else {
+      const existente = naRevisao.buscar(doi, tituloNormalizado);
+      // sem origem na linha nem na importação, um documento que já é de revisão anterior/integrado continua assim
+      const jaEspecial = existente?.origem === 'REVISAO_ANTERIOR' || existente?.origem === 'INTEGRADO';
+      const origem: Origem = l.origem ?? o.origem ?? (jaEspecial ? existente.origem : 'BUSCA');
+      let rdId: string | undefined = existente?.rdId;
+      if (rdId) {
+        rel.documentosDaRevisao++;
+        if ((origem !== 'BUSCA' || jaEspecial) && existente.origem !== origem) {
+          marcarOrigem[origem].push(rdId);
+          existente.origem = origem;
+        }
+      } else {
         const base = baseDe(l.base);
-        const busca = await buscaDa(base);
+        const busca = origem === 'BUSCA' ? await buscaDa(base) : null;
         let documentoId = noProjeto.buscar(doi, tituloNormalizado)?.id as string | undefined;
         if (documentoId) rel.documentosDoProjeto++;
         else {
@@ -469,26 +519,37 @@ async function importar(
             criadoPor: o.usuarioId,
           });
           rel.documentosCriados++;
-          busca.novos++;
+          if (busca) busca.novos++;
         }
         rdId = uuid();
         novosRds.push({
           id: rdId,
           revisaoId: o.revisaoId,
           documentoId,
-          buscaId: busca.id,
-          origem: 'BUSCA',
-          situacao: 'EM_TRIAGEM',
+          buscaId: busca?.id ?? null,
+          origem,
+          situacao: origem === 'BUSCA' ? 'EM_TRIAGEM' : 'INCLUIDO',
         });
-        busca.total++;
+        if (busca) busca.total++;
         // linhas seguintes com o mesmo documento caem no mesmo registro
-        naRevisao.adicionar({ rdId, id: documentoId, doi, tituloNormalizado });
+        naRevisao.adicionar({ rdId, id: documentoId, doi, tituloNormalizado, origem });
         noProjeto.adicionar({ id: documentoId, doi, tituloNormalizado });
       }
       porRd.set(rdId!, l);
+      if (origem !== 'BUSCA') especiais.set(rdId!, origem);
     }
     for (const lote of emLotes(novosDocs)) await trx('documento').insert(lote);
     for (const lote of emLotes(novosRds)) await trx('revisaoDocumento').insert(lote);
+    for (const [origem, ids] of Object.entries(marcarOrigem))
+      for (const lote of emLotes(ids))
+        await trx('revisaoDocumento').whereIn('id', lote).update({ origem, situacao: origem === 'BUSCA' ? 'EM_TRIAGEM' : 'INCLUIDO' });
+    if (especiais.size) {
+      const vals = [...especiais.values()];
+      rel.outrasOrigens = {
+        revisaoAnterior: vals.filter((x) => x === 'REVISAO_ANTERIOR').length,
+        integrados: vals.filter((x) => x === 'INTEGRADO').length,
+      };
+    }
 
     // ---- temas do projeto (coluna Temas): cria os que faltam e liga aos documentos
     const temasPorDoc = new Map<string, string[]>();
@@ -525,7 +586,7 @@ async function importar(
     }
 
     // ---- decisões
-    const rdIds = [...porRd.keys()];
+    const rdIds = [...porRd.keys()].filter((id) => !especiais.has(id));
     if (alvo) {
       if (o.substituir) {
         await trx('triagemDecisao').where({ revisaoEtapaId: alvo.id }).del();
@@ -547,7 +608,7 @@ async function importar(
           : null;
       // resultados já gravados nas etapas anteriores (RN09 e triagens que faltam completar)
       const existentes = new Map<string, Map<string, string | null>>(); // rdId → etapaId → decisão
-      for (const lote of emLotes([...porRd.keys()])) {
+      for (const lote of emLotes(rdIds)) {
         const rs = await trx('triagemResultado as tr')
           .join('revisaoEtapa as e', 'e.id', 'tr.revisaoEtapaId')
           .where('e.revisaoId', o.revisaoId)
@@ -566,6 +627,7 @@ async function importar(
       const desfazer: string[] = [];
       const agora = new Date();
       for (const [rdId, l] of porRd) {
+        if (especiais.has(rdId)) continue;
         const antes = existentes.get(rdId);
         if (antes && [...antes.values()].includes('EXCLUIDO')) {
           avisos.push({
@@ -659,7 +721,7 @@ async function importar(
             'resolvidoPor',
             'resolvidoEm',
           ]);
-    } else rel.decisoes.semDecisao = porRd.size;
+    } else rel.decisoes.semDecisao = rdIds.length;
 
     await recalcularSituacao(trx, o.revisaoId, [...new Set(rdIds)]);
     return rel;

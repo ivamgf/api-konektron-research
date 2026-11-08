@@ -94,17 +94,98 @@ export function elegiveis(etapa: { id: string; revisaoId: string; ordem: number 
 
 export async function contagensEtapa(etapa: { id: string; revisaoId: string; ordem: number }) {
   const total = Number((await elegiveis(etapa).count({ n: '*' }).first())?.n ?? 0);
-  const r = await db('triagemResultado')
-    .where({ revisaoEtapaId: etapa.id })
+  // só os resultados de documentos elegíveis (resultados de documentos que saíram da etapa não contam)
+  const r = await db('triagemResultado as r')
+    .where('r.revisaoEtapaId', etapa.id)
+    .whereIn('r.revisaoDocumentoId', elegiveis(etapa).select('rd.id'))
     .select(
-      db.raw("SUM(decisao_final = 'SELECIONADO') AS selecionados"),
-      db.raw("SUM(decisao_final = 'EXCLUIDO') AS excluidos"),
-      db.raw('SUM(conflito = 1) AS conflitos'),
+      db.raw("SUM(r.decisao_final = 'SELECIONADO') AS selecionados"),
+      db.raw("SUM(r.decisao_final = 'EXCLUIDO') AS excluidos"),
+      db.raw('SUM(r.conflito = 1) AS conflitos'),
+      db.raw('SUM(r.decisao_final IS NULL AND r.conflito = 0) AS aguardando'),
     )
     .first();
   const selecionados = Number(r?.selecionados ?? 0);
   const excluidos = Number(r?.excluidos ?? 0);
-  return { total, selecionados, excluidos, conflitos: Number(r?.conflitos ?? 0), semDecisao: Math.max(0, total - selecionados - excluidos) };
+  return {
+    total,
+    selecionados,
+    excluidos,
+    conflitos: Number(r?.conflitos ?? 0),
+    /** com decisão de um revisor, esperando a do segundo (revisão com dois revisores) */
+    aguardandoRevisor: Number(r?.aguardando ?? 0),
+    semDecisao: Math.max(0, total - selecionados - excluidos),
+  };
+}
+
+/**
+ * RN12: a revisão com dois revisores só exige a segunda decisão quando o projeto tem ao menos
+ * dois membros que decidem (responsável/colaborador); com um só, a decisão dele é a final.
+ */
+export async function exigeDoisRevisores(trx: Trx | typeof db, etapa: { doisRevisores?: boolean; exigeTriagem?: boolean; projetoId: string }) {
+  if (!etapa.doisRevisores || !etapa.exigeTriagem) return false;
+  const r = await trx('projetoMembro')
+    .where({ projetoId: etapa.projetoId })
+    .whereNotNull('aceitoEm')
+    .whereIn('papel', ['RESPONSAVEL', 'COLABORADOR'])
+    .count({ n: '*' })
+    .first();
+  return Number(r?.n ?? 0) >= 2;
+}
+
+/**
+ * Consolida as decisões dos revisores no resultado da etapa (RN12), em lote. Documentos sem
+ * decisão ficam como estão (ex.: "selecionado" implícito de importação); desempates do
+ * orientador prevalecem. Devolve os documentos que passaram a ter conflito.
+ */
+export async function consolidarDecisoes(
+  trx: Trx,
+  etapa: { id: string; revisaoId: string; projetoId: string; doisRevisores?: boolean; exigeTriagem?: boolean },
+  rdIds: string[],
+) {
+  const dois = await exigeDoisRevisores(trx, etapa);
+  const novosConflitos: string[] = [];
+  for (let i = 0; i < rdIds.length; i += 500) {
+    const lote = rdIds.slice(i, i + 500);
+    const decisoes = await trx('triagemDecisao').where({ revisaoEtapaId: etapa.id }).whereIn('revisaoDocumentoId', lote).orderBy('decididoEm');
+    const atuais = new Map(
+      (await trx('triagemResultado').where({ revisaoEtapaId: etapa.id }).whereIn('revisaoDocumentoId', lote)).map((r: any) => [r.revisaoDocumentoId, r]),
+    );
+    const porRd = new Map<string, any[]>();
+    for (const d of decisoes) porRd.set(d.revisaoDocumentoId, [...(porRd.get(d.revisaoDocumentoId) ?? []), d]);
+    const gravar: Record<string, unknown>[] = [];
+    for (const id of lote) {
+      const ds = porRd.get(id);
+      const atual = atuais.get(id);
+      if (!ds?.length || atual?.resolvidoPor) continue;
+      let r: { decisaoFinal: string | null; motivo: string | null; criterioId: string | null; conflito: boolean };
+      if (dois && ds.length < 2) r = { decisaoFinal: null, motivo: null, criterioId: null, conflito: false };
+      else if (dois) {
+        const [a, b] = ds.slice(-2);
+        r = a.decisao === b.decisao
+          ? { decisaoFinal: b.decisao, motivo: b.motivo, criterioId: b.criterioId, conflito: false }
+          : { decisaoFinal: null, motivo: null, criterioId: null, conflito: true };
+      } else {
+        const u = ds.at(-1);
+        r = { decisaoFinal: u.decisao, motivo: u.motivo, criterioId: u.criterioId, conflito: false };
+      }
+      if (r.conflito && !atual?.conflito) novosConflitos.push(id);
+      gravar.push({ revisaoDocumentoId: id, revisaoEtapaId: etapa.id, ...r });
+    }
+    if (gravar.length) await trx('triagemResultado').insert(gravar).onConflict().merge(['decisaoFinal', 'motivo', 'criterioId', 'conflito']);
+  }
+  await recalcularSituacao(trx, etapa.revisaoId, rdIds);
+  return { novosConflitos };
+}
+
+/** Reaplica a consolidação em todas as triagens da revisão (ex.: depois de ligar/desligar os dois revisores) */
+export async function reconsolidarRevisao(trx: Trx, revisaoId: string) {
+  const r = await trx('revisao').where({ id: revisaoId }).first('projetoId', 'doisRevisores');
+  const etapas = await trx('revisaoEtapa').where({ revisaoId }).where((w: any) => w.where('exigeTriagem', true).orWhere('permiteExclusao', true));
+  for (const e of etapas) {
+    const ids = (await trx('triagemDecisao').where({ revisaoEtapaId: e.id }).distinct('revisaoDocumentoId')).map((x: any) => x.revisaoDocumentoId);
+    if (ids.length) await consolidarDecisoes(trx, { ...e, projetoId: r.projetoId, doisRevisores: !!r.doisRevisores }, ids);
+  }
 }
 
 // RN13: totais do painel
@@ -175,4 +256,15 @@ export async function recalcularSituacao(trx: Trx, revisaoId: string, rdIds: str
     }
     for (const [situacao, ids] of Object.entries(alvo)) if (ids.length) await trx('revisaoDocumento').whereIn('id', ids).update({ situacao });
   }
+}
+
+/**
+ * Resultados "aguardando o 2º revisor" que não deveriam esperar (revisão passou a um revisor, ou o
+ * projeto só tem um membro que decide): a decisão já registrada vira a final. Devolve se mudou algo.
+ */
+export async function resolverAguardando(etapa: { id: string; revisaoId: string; projetoId: string; doisRevisores?: boolean; exigeTriagem?: boolean }) {
+  const ids: string[] = await db('triagemResultado').where({ revisaoEtapaId: etapa.id, conflito: false }).whereNull('decisaoFinal').pluck('revisaoDocumentoId');
+  if (!ids.length || (await exigeDoisRevisores(db, etapa))) return false;
+  await db.transaction((trx) => consolidarDecisoes(trx, etapa, ids));
+  return true;
 }
