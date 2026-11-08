@@ -263,7 +263,7 @@ export async function recalcularSituacao(trx: Trx, revisaoId: string, rdIds: str
  * projeto só tem um membro que decide): a decisão já registrada vira a final. Devolve se mudou algo.
  */
 export async function resolverAguardando(etapa: { id: string; revisaoId: string; projetoId: string; doisRevisores?: boolean; exigeTriagem?: boolean }) {
-  const ids: string[] = await db('triagemResultado').where({ revisaoEtapaId: etapa.id, conflito: false }).whereNull('decisaoFinal').pluck('revisaoDocumentoId');
+  const ids: string[] = await db('triagemResultado').where({ revisaoEtapaId: etapa.id, conflito: false }).whereNull('decisaoFinal').select('revisaoDocumentoId').then((rs: any[]) => rs.map((r) => r.revisaoDocumentoId));
   if (!ids.length || (await exigeDoisRevisores(db, etapa))) return false;
   await db.transaction((trx) => consolidarDecisoes(trx, etapa, ids));
   return true;
