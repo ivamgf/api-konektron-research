@@ -30,7 +30,7 @@ export const RESOLVERS = {
   ),
 } satisfies Record<string, Resolver>;
 
-const uuid = z.uuid();
+const uuid = z.guid();
 
 /**
  * Carrega req.projeto e req.papel a partir de req.params[param], resolvido pelo tipo de recurso.

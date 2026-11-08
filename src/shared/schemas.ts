@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-export const idParams = z.object({ id: z.uuid() });
-export const uuidSchema = z.uuid();
+export const idParams = z.object({ id: z.guid() });
+export const uuidSchema = z.guid();
 
 export const pagination = z.object({
   page: z.coerce.number().int().min(1).default(1),

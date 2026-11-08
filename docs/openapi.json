@@ -6470,7 +6470,8 @@
                   "formato": {
                     "type": "string",
                     "enum": [
-                      "xlsx"
+                      "xlsx",
+                      "pdf"
                     ]
                   }
                 }

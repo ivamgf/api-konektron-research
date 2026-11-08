@@ -7,7 +7,7 @@ import { lerArquivo, salvarArquivo } from '#services/arquivos.ts';
 import { storage } from '#services/storage/index.ts';
 import { notificar } from '#services/notificacoes.ts';
 import { htmlParaPdf, esc, ESTILO } from '#pdf/render.ts';
-import { htmlProtocolo } from '#pdf/protocolo.ts';
+import { capa, htmlProtocolo, secoesProtocolo, type DadosProtocolo } from '#pdf/protocolo.ts';
 import { protocoloCompleto } from '#modules/protocolo/protocolo.service.ts';
 import { painel } from '#modules/revisoes/revisoes.service.ts';
 import { fluxogramaSvg } from '#modules/revisoes/fluxograma.ts';
@@ -83,8 +83,7 @@ const importarBusca: Handler = async (t) => {
 };
 
 // ------------------------------------------------ gerar-pdf-protocolo (RF13, S1)
-const gerarPdfProtocolo: Handler = async (t) => {
-  const { protocoloId, projetoId, versao, secoes } = t.payload;
+async function dadosProtocolo(protocoloId: string, projetoId: string, versao: number | null, secoes: string[] | null = null) {
   const projeto = await db('projeto').where({ id: projetoId }).first();
   const equipe = await db('projetoMembro as pm').join('usuario as u', 'u.id', 'pm.usuarioId').where('pm.projetoId', projetoId).whereNotNull('pm.aceitoEm').select('u.nome', 'u.orcid', 'pm.papel').orderBy('u.nome');
   const atual = await db('protocolo as p').leftJoin('usuario as u', 'u.id', 'p.aprovadoPor').where('p.id', protocoloId).first('p.*', 'u.nome as aprovadoPorNome');
@@ -97,10 +96,13 @@ const gerarPdfProtocolo: Handler = async (t) => {
   }
   const versoes = await db('protocoloVersao as v').leftJoin('usuario as u', 'u.id', 'v.criadoPor').where('v.protocoloId', protocoloId).orderBy('v.versao').select('v.versao', 'v.criadoEm', 'v.justificativa', 'u.nome as criadoPorNome');
   const numero = versao ?? (atual.versaoAtual || null);
-  const pdf = await htmlParaPdf(
-    htmlProtocolo({ projeto, equipe, p, versao: numero, status, revisoes, versoes, secoes }),
-    `Protocolo de pesquisa · versão ${numero ?? 'em edição'}`,
-  );
+  return { v, dados: { projeto, equipe, p, versao: numero, status, revisoes, versoes, secoes } satisfies DadosProtocolo };
+}
+
+const gerarPdfProtocolo: Handler = async (t) => {
+  const { protocoloId, projetoId, versao, secoes } = t.payload;
+  const { v, dados: d } = await dadosProtocolo(protocoloId, projetoId, versao ?? null, secoes ?? null);
+  const pdf = await htmlParaPdf(htmlProtocolo(d), `Protocolo de pesquisa · versão ${d.versao ?? 'em edição'}`);
   const arquivoId = await salvarArquivo({
     projetoId,
     chave: `projetos/${projetoId}/protocolos/${versao ? `v${versao}` : `rascunho-${carimbo()}`}.pdf`,
@@ -226,27 +228,36 @@ const exportarProjeto: Handler = async (t) => {
   await salvarResultado(t, { arquivoId });
 };
 
+// Níveis de título: o PDF avulso usa h1/h2; dentro do PDF do projeto inteiro, h2/h3
+type Niveis = { titulo: 'h1' | 'h2'; secao: 'h2' | 'h3'; prefixo?: string };
+const AVULSO: Niveis = { titulo: 'h1', secao: 'h2' };
+const documentoHtml = (corpo: string) => `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>${ESTILO}</style></head><body>
+${corpo}
+</body></html>`;
+
+async function corpoAnalise(analise: any, n: Niveis = AVULSO) {
+  const l = await linhasAnalise(analise.id);
+  const { titulo: T, secao: S } = n;
+  return `<${T}>${n.prefixo ?? ''}${esc(analise.nome)}</${T}><p>${esc(analise.descricao ?? '')}</p>
+${l.analise.map((d: any) => `<${S}>${d.ordem}. ${esc(d.titulo)}</${S}><p>${esc(d.autores ?? '')} (${d.ano ?? 's.d.'}) · ${esc(d.progresso)}</p>
+<table>${l.questoes.map((q: any) => `<tr><th style="width:30%">${esc(q.codigo)} – ${esc(q.enunciado)}</th><td>${esc(d[q.codigo] || '—')}</td></tr>`).join('')}</table>
+${d.consideracoes ? `<${S === 'h2' ? 'h3' : 'h4'}>Considerações</${S === 'h2' ? 'h3' : 'h4'}><p>${esc(d.consideracoes)}</p>` : ''}`).join('') || '<p class="vazio">Nenhum documento na análise</p>'}
+<${S}>Matriz de síntese</${S}><table><tr><th>Documento</th><th>Citação</th><th>Texto parafraseado</th></tr>${l.matriz.map((m: any) => `<tr><td>${esc(m.titulo)}</td><td>${esc(m.citacao ?? '')}</td><td>${esc(m.textoParafraseado ?? '')}</td></tr>`).join('') || '<tr><td colspan="3" class="vazio">Sem citações</td></tr>'}</table>`;
+}
+
 const exportarAnalise: Handler = async (t) => {
   const { analiseId, projetoId, formato } = t.payload;
   const analise = await db('analise').where({ id: analiseId }).first();
-  const l = await linhasAnalise(analiseId);
   let dados: Buffer;
   let ext: string;
   let mime: string;
   if (formato === 'pdf') {
-    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>${ESTILO}</style></head><body>
-<h1>${esc(analise.nome)}</h1><p>${esc(analise.descricao ?? '')}</p>
-${l.analise.map((d: any) => `<h2>${d.ordem}. ${esc(d.titulo)}</h2><p>${esc(d.autores ?? '')} (${d.ano ?? 's.d.'}) · ${esc(d.progresso)}</p>
-<table>${l.questoes.map((q: any) => `<tr><th style="width:30%">${esc(q.codigo)} – ${esc(q.enunciado)}</th><td>${esc(d[q.codigo] || '—')}</td></tr>`).join('')}</table>
-${d.consideracoes ? `<h3>Considerações</h3><p>${esc(d.consideracoes)}</p>` : ''}`).join('')}
-<h2>Matriz de síntese</h2><table><tr><th>Documento</th><th>Citação</th><th>Texto parafraseado</th></tr>${l.matriz.map((m: any) => `<tr><td>${esc(m.titulo)}</td><td>${esc(m.citacao ?? '')}</td><td>${esc(m.textoParafraseado ?? '')}</td></tr>`).join('')}</table>
-</body></html>`;
-    dados = await htmlParaPdf(html, `Análise: ${esc(analise.nome)}`);
+    dados = await htmlParaPdf(documentoHtml(await corpoAnalise(analise)), `Análise: ${esc(analise.nome)}`);
     ext = 'pdf';
     mime = 'application/pdf';
   } else {
     const wb = await novaPlanilha();
-    abasAnalise(wb, '', l);
+    abasAnalise(wb, '', await linhasAnalise(analiseId));
     dados = Buffer.from(await wb.xlsx.writeBuffer());
     ext = 'xlsx';
     mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -256,26 +267,58 @@ ${d.consideracoes ? `<h3>Considerações</h3><p>${esc(d.consideracoes)}</p>` : '
 };
 
 // ------------------------------------------------ relatorio-revisao (RF43)
+const consultaRevisao = () =>
+  db('revisao as r')
+    .join('tipoRevisao as tr', 'tr.id', 'r.tipoRevisaoId')
+    .leftJoin('diretrizRelato as d', 'd.id', 'r.diretrizRelatoId')
+    .select('r.*', 'tr.nome as tipoNome', 'd.sigla as diretrizSigla', 'd.versao as diretrizVersao');
+
+/** Relatório da revisão (RF43); `resumoProtocolo` fica de fora no PDF do projeto, que já traz o protocolo */
+async function corpoRevisao(r: any, n: Niveis = AVULSO, p?: any) {
+  const { titulo: T, secao: S } = n;
+  const pn = await painel(r.id);
+  const incluidos = await db('revisaoDocumento as rd').join('documento as d', 'd.id', 'rd.documentoId').where({ 'rd.revisaoId': r.id, 'rd.situacao': 'INCLUIDO' }).orderBy('d.titulo').select('d.refNbr', 'd.titulo');
+  const checklist = await db('revisaoChecklistItem').where({ revisaoId: r.id }).orderBy('ordem');
+  return `<${T}>${n.prefixo ?? ''}${esc(r.titulo)}</${T}><p>Tipo: ${esc(r.tipoNome)} · Diretriz: ${esc(r.diretrizSigla ?? 'nenhuma')} ${esc(r.diretrizVersao ?? '')}</p>
+${p ? `<${S}>Protocolo resumido</${S}><p><b>Questão:</b> ${esc(p.questaoPesquisa)}</p><p><b>Objetivo:</b> ${esc(p.objetivoGeral)}</p>
+<p><b>Palavras-chave:</b> ${esc(p.palavrasChave.map((x: any) => x.termo).join('; '))}</p>` : ''}
+<${S}>Painel de etapas</${S}><table><tr><th>Etapa</th><th>Base</th><th>Selecionados</th><th>Excluídos</th></tr>${pn.porEtapa.map((e: any) => `<tr><td>${esc(e.etapaNome)}</td><td>${esc(e.base)}</td><td>${e.selecionados}</td><td>${e.excluidos}</td></tr>`).join('') || '<tr><td colspan="4" class="vazio">Sem etapas</td></tr>'}</table>
+<${S}>Fluxo de seleção</${S}>${fluxogramaSvg(pn)}
+<${S}>Incluídos (${incluidos.length})</${S}>${incluidos.length ? `<ol>${incluidos.map((d: any) => `<li>${esc(d.refNbr ?? d.titulo)}</li>`).join('')}</ol>` : '<p class="vazio">Nenhum documento incluído</p>'}
+<${S}>Checklist de relato</${S}><table><tr><th>Cód.</th><th>Item</th><th>Situação</th><th>Local</th></tr>${checklist.map((c: any) => `<tr><td>${esc(c.codigo)}</td><td>${esc(c.descricao)}</td><td>${esc(c.situacao)}</td><td>${esc(c.localRelato ?? '')}</td></tr>`).join('') || '<tr><td colspan="4" class="vazio">Sem checklist</td></tr>'}</table>`;
+}
+
 const relatorioRevisao: Handler = async (t) => {
   const { revisaoId, projetoId } = t.payload;
-  const r = await db('revisao as r').join('tipoRevisao as tr', 'tr.id', 'r.tipoRevisaoId').leftJoin('diretrizRelato as d', 'd.id', 'r.diretrizRelatoId').where('r.id', revisaoId).first('r.*', 'tr.nome as tipoNome', 'd.sigla as diretrizSigla', 'd.versao as diretrizVersao');
+  const r = await consultaRevisao().where('r.id', revisaoId).first();
   const pr = await db('protocolo').where({ projetoId }).first('id');
   const p = await protocoloCompleto(pr.id);
-  const pn = await painel(revisaoId);
-  const incluidos = await db('revisaoDocumento as rd').join('documento as d', 'd.id', 'rd.documentoId').where({ 'rd.revisaoId': revisaoId, 'rd.situacao': 'INCLUIDO' }).orderBy('d.titulo').select('d.refNbr', 'd.titulo');
-  const checklist = await db('revisaoChecklistItem').where({ revisaoId }).orderBy('ordem');
-  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>${ESTILO}</style></head><body>
-<h1>${esc(r.titulo)}</h1><p>Tipo: ${esc(r.tipoNome)} · Diretriz: ${esc(r.diretrizSigla ?? 'nenhuma')} ${esc(r.diretrizVersao ?? '')}</p>
-<h2>Protocolo resumido</h2><p><b>Questão:</b> ${esc(p.questaoPesquisa)}</p><p><b>Objetivo:</b> ${esc(p.objetivoGeral)}</p>
-<p><b>Palavras-chave:</b> ${esc(p.palavrasChave.map((x: any) => x.termo).join('; '))}</p>
-<h2>Painel de etapas</h2><table><tr><th>Etapa</th><th>Base</th><th>Selecionados</th><th>Excluídos</th></tr>${pn.porEtapa.map((e: any) => `<tr><td>${esc(e.etapaNome)}</td><td>${esc(e.base)}</td><td>${e.selecionados}</td><td>${e.excluidos}</td></tr>`).join('')}</table>
-<h2>Fluxo de seleção</h2>${fluxogramaSvg(pn)}
-<h2>Incluídos (${incluidos.length})</h2><ol>${incluidos.map((d: any) => `<li>${esc(d.refNbr ?? d.titulo)}</li>`).join('')}</ol>
-<h2>Checklist de relato</h2><table><tr><th>Cód.</th><th>Item</th><th>Situação</th><th>Local</th></tr>${checklist.map((c: any) => `<tr><td>${esc(c.codigo)}</td><td>${esc(c.descricao)}</td><td>${esc(c.situacao)}</td><td>${esc(c.localRelato ?? '')}</td></tr>`).join('')}</table>
-</body></html>`;
-  const dados = await htmlParaPdf(html, `Relatório da revisão · ${esc(r.titulo).slice(0, 60)}`);
+  const dados = await htmlParaPdf(documentoHtml(await corpoRevisao(r, AVULSO, p)), `Relatório da revisão · ${esc(r.titulo).slice(0, 60)}`);
   const arquivoId = await salvarArquivo({ projetoId, chave: `projetos/${projetoId}/relatorios/revisao-${revisaoId}-${carimbo()}.pdf`, nomeOriginal: 'relatorio_revisao.pdf', mimeType: 'application/pdf', dados, criadoPor: t.payload.usuarioId });
   await salvarResultado(t, { arquivoId });
+};
+
+// ------------------------------------------------ gerar-pdf-projeto: protocolo + revisões + análises
+const gerarPdfProjeto: Handler = async (t) => {
+  const { projetoId } = t.payload;
+  const pr = await db('protocolo').where({ projetoId }).first('id');
+  const { dados: d } = await dadosProtocolo(pr.id, projetoId, null);
+  const revisoes = await consultaRevisao().where('r.projetoId', projetoId).orderBy('r.criadoEm');
+  const analises = await db('analise').where({ projetoId }).orderBy('criadoEm');
+  const sub: Niveis = { titulo: 'h2', secao: 'h3' };
+  const partes = [
+    capa({ rotulo: 'PROJETO DE PESQUISA', projeto: d.projeto, equipe: d.equipe, linha: `Protocolo versão ${d.versao ?? 'em edição'} · ${esc(d.status)}` }),
+    `<h1>Protocolo de pesquisa</h1>${secoesProtocolo(d)}`,
+    `<h1 class="quebra">Revisões</h1>${revisoes.length ? '' : '<p class="vazio">Nenhuma revisão cadastrada</p>'}`,
+  ];
+  for (const [i, r] of revisoes.entries()) partes.push(`<div${i ? ' class="quebra"' : ''}>${await corpoRevisao(r, { ...sub, prefixo: `R${i + 1}. ` })}</div>`);
+  partes.push(`<h1 class="quebra">Análises</h1>${analises.length ? '' : '<p class="vazio">Nenhuma análise cadastrada</p>'}`);
+  for (const [i, a] of analises.entries()) partes.push(`<div${i ? ' class="quebra"' : ''}>${await corpoAnalise(a, { ...sub, prefixo: `A${i + 1}. ` })}</div>`);
+  const rascunho = d.status === 'RASCUNHO' || d.status === 'DEVOLVIDO';
+  const pdf = await htmlParaPdf(documentoHtml((rascunho ? '<div class="marca">RASCUNHO</div>' : '') + partes.join('\n')),`Projeto · ${esc(d.projeto.titulo).slice(0, 60)}`);
+  const arquivoId = await salvarArquivo({ projetoId, chave: `projetos/${projetoId}/exportacoes/projeto-${carimbo()}.pdf`, nomeOriginal: 'projeto.pdf', mimeType: 'application/pdf', dados: pdf, criadoPor: t.payload.usuarioId ?? null });
+  await salvarResultado(t, { arquivoId });
+  return { arquivoId };
 };
 
 // ------------------------------------------------ limpar-lixeira (RN17: 30 dias)
@@ -304,6 +347,7 @@ export async function limparLixeira() {
 export const handlers: Record<string, Handler> = {
   'importar-busca': importarBusca,
   'gerar-pdf-protocolo': gerarPdfProtocolo,
+  'gerar-pdf-projeto': gerarPdfProjeto,
   'exportar-projeto': exportarProjeto,
   'exportar-analise': exportarAnalise,
   'relatorio-revisao': relatorioRevisao,

@@ -68,7 +68,7 @@ router.use(
       sigla: z.string().trim().min(1).max(30),
       versao: optText(20),
       urlOficial: z.url().max(300).nullable().optional(),
-      checklistModeloId: z.uuid().nullable().optional(),
+      checklistModeloId: z.guid().nullable().optional(),
       ativo: z.boolean().optional(),
     }),
   }),
@@ -109,7 +109,7 @@ router.use(
     }),
   }),
 );
-router.patch('/checklists/:id', ...admin, validate({ params: z.object({ id: z.uuid() }), body: checklistSchema.partial() }), async (req, res) => {
+router.patch('/checklists/:id', ...admin, validate({ params: z.object({ id: z.guid() }), body: checklistSchema.partial() }), async (req, res) => {
   const n = await db('checklistModelo').where({ id: req.validated.params.id }).update(req.validated.body);
   if (!n) throw AppError.notFound('Checklist');
   res.json(await db('checklistModelo').where({ id: req.validated.params.id }).first());

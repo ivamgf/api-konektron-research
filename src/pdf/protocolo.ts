@@ -3,8 +3,7 @@ import { esc, ESTILO, paragrafos } from './render.ts';
 const lista = (itens: string[]) => (itens.length ? `<ol>${itens.map((i) => `<li>${esc(i)}</li>`).join('')}</ol>` : '<p class="vazio">Não informado</p>');
 const dataBr = (d: unknown) => (d ? new Date(d as string).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—');
 
-// ERS 8.5: layout do PDF do protocolo de pesquisa
-export function htmlProtocolo(o: {
+export type DadosProtocolo = {
   projeto: any;
   equipe: any[];
   p: any; // protocolo completo (ou snapshot da versão)
@@ -13,20 +12,36 @@ export function htmlProtocolo(o: {
   revisoes: any[];
   versoes: any[];
   secoes?: string[] | null;
-}) {
-  const { projeto, equipe, p, versao, status, revisoes, versoes } = o;
-  const mostra = (s: string) => !o.secoes || o.secoes.includes(s);
-  const rascunho = status === 'RASCUNHO' || status === 'DEVOLVIDO';
-  const autores = equipe.filter((m) => m.papel !== 'LEITOR').map((m) => m.nome).join(', ');
+};
+
+export const autoresDaEquipe = (equipe: any[]) => equipe.filter((m) => m.papel !== 'LEITOR').map((m) => m.nome).join(', ');
+
+/** Capa no layout Konektron (protocolo e projeto inteiro) */
+export function capa(o: { rotulo: string; projeto: any; equipe: any[]; linha: string }) {
+  return `<section class="capa">
+  <p>${esc(o.rotulo)}</p>
+  <h1>${esc(o.projeto.titulo)}</h1>
+  <p>${esc(autoresDaEquipe(o.equipe))}</p>
+  <p>${esc(o.projeto.instituicao ?? '')}${o.projeto.programa ? ` · ${esc(o.projeto.programa)}` : ''}</p>
+  <p>${o.linha} · ${dataBr(new Date())}</p>
+</section>`;
+}
+
+// ERS 8.5: layout do PDF do protocolo de pesquisa
+export function htmlProtocolo(o: DadosProtocolo) {
+  const rascunho = o.status === 'RASCUNHO' || o.status === 'DEVOLVIDO';
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>${ESTILO}</style></head><body>
 ${rascunho ? '<div class="marca">RASCUNHO</div>' : ''}
-<section class="capa">
-  <p>PROTOCOLO DE PESQUISA</p>
-  <h1>${esc(projeto.titulo)}</h1>
-  <p>${esc(autores)}</p>
-  <p>${esc(projeto.instituicao ?? '')}${projeto.programa ? ` · ${esc(projeto.programa)}` : ''}</p>
-  <p>Versão ${versao ?? 'em edição'} · ${esc(status)} · ${dataBr(new Date())}</p>
-</section>
+${capa({ rotulo: 'PROTOCOLO DE PESQUISA', projeto: o.projeto, equipe: o.equipe, linha: `Versão ${o.versao ?? 'em edição'} · ${esc(o.status)}` })}
+${secoesProtocolo(o)}
+</body></html>`;
+}
+
+/** Seções 1 a 7 do protocolo, sem capa nem documento HTML em volta */
+export function secoesProtocolo(o: DadosProtocolo) {
+  const { projeto, equipe, p, revisoes, versoes } = o;
+  const mostra = (s: string) => !o.secoes || o.secoes.includes(s);
+  return `
 ${mostra('identificacao') ? `<h2>1. Identificação</h2>
 <table><tr><th>Projeto</th><td>${esc(projeto.titulo)}</td></tr>
 <tr><th>Área</th><td>${esc(projeto.area ?? '—')}</td></tr>
@@ -50,6 +65,5 @@ ${mostra('criterios') ? `<h2>5. Critérios de inclusão e exclusão</h2>
 ${['INCLUSAO', 'EXCLUSAO'].map((t) => `<h3>${t === 'INCLUSAO' ? 'Inclusão' : 'Exclusão'}</h3><table><tr><th>Critério</th><th>Descrição</th></tr>${(p.criterios ?? []).filter((c: any) => c.tipo === t).map((c: any) => `<tr><td>${esc(c.nome)}</td><td>${esc(c.descricao ?? '')}</td></tr>`).join('') || '<tr><td colspan="2" class="vazio">Nenhum</td></tr>'}</table>`).join('')}` : ''}
 ${mostra('revisoes') ? `<h2>6. Revisões previstas</h2>${revisoes.length ? revisoes.map((r) => `<h3>${esc(r.titulo)}</h3><p>Tipo: ${esc(r.tipoNome)} · Diretriz de relato: ${r.diretrizSigla ? `${esc(r.diretrizSigla)} ${esc(r.diretrizVersao ?? '')} — ${esc(r.diretrizUrl ?? '')}` : 'nenhuma'}</p>${lista(r.etapas.map((e: any) => e.nome))}`).join('') : '<p class="vazio">Nenhuma revisão cadastrada</p>'}` : ''}
 ${mostra('historico') ? `<h2>7. Histórico de versões e aprovação</h2><table><tr><th>Versão</th><th>Data</th><th>Autor</th><th>Justificativa</th></tr>${versoes.map((v) => `<tr><td>${v.versao}</td><td>${dataBr(v.criadoEm)}</td><td>${esc(v.criadoPorNome ?? '')}</td><td>${esc(v.justificativa ?? '—')}</td></tr>`).join('') || '<tr><td colspan="4" class="vazio">Sem versões concluídas</td></tr>'}</table>
-${p.aprovadoEm ? `<p>Aprovado por ${esc(p.aprovadoPorNome ?? 'orientador(a)')} em ${dataBr(p.aprovadoEm)}.</p>` : ''}${p.parecer ? `<h3>Parecer</h3>${paragrafos(p.parecer)}` : ''}` : ''}
-</body></html>`;
+${p.aprovadoEm ? `<p>Aprovado por ${esc(p.aprovadoPorNome ?? 'orientador(a)')} em ${dataBr(p.aprovadoEm)}.</p>` : ''}${p.parecer ? `<h3>Parecer</h3>${paragrafos(p.parecer)}` : ''}` : ''}`;
 }

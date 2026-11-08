@@ -56,7 +56,7 @@ const passoSchema = z.object({
   strings: z
     .array(
       z.object({
-        baseDadosId: z.uuid().nullable().optional(),
+        baseDadosId: z.guid().nullable().optional(),
         campo: z.enum(['TITULO', 'RESUMO', 'PALAVRAS_CHAVE', 'TODOS']).optional(),
         expressao: z.string().trim().min(1).max(10_000),
       }),
@@ -242,7 +242,7 @@ router.use(
     ordered: true,
     label: 'String de busca',
     createSchema: z.object({
-      baseDadosId: z.uuid().nullable().optional(),
+      baseDadosId: z.guid().nullable().optional(),
       campo: z.enum(['TITULO', 'RESUMO', 'PALAVRAS_CHAVE', 'TODOS']).optional(),
       expressao: z.string().trim().min(1).max(10_000),
       ordem: z.number().int().positive().optional(),
@@ -285,7 +285,7 @@ async function proximoCodigo(trx: any, protocoloIdValor: string) {
 router.post(
   '/questoes/de-outras-questoes',
   ...edita,
-  validate({ body: z.object({ ids: z.array(z.uuid()).optional() }) }),
+  validate({ body: z.object({ ids: z.array(z.guid()).optional() }) }),
   async (req, res) => {
     const pid = await protocoloId(req);
     const criadas = await db.transaction(async (trx) => {

@@ -16,9 +16,9 @@ const MOTIVOS = ['CRITERIO', 'DUPLICADO', 'SEM_ACESSO', 'OUTRO'] as const;
 const tipoSchema = z.object({
   nome: z.string().trim().min(1).max(120),
   descricao: longText(5000),
-  tipoPaiId: z.uuid().nullable().optional(),
+  tipoPaiId: z.guid().nullable().optional(),
   sistematica: z.boolean().optional(),
-  projetoId: z.uuid().nullable().optional(),
+  projetoId: z.guid().nullable().optional(),
   ativo: z.boolean().optional(),
 });
 
@@ -47,7 +47,7 @@ async function conferirNomeGlobal(nome: string, projetoId: string | null | undef
 }
 
 // RF16: catálogo hierárquico — globais + do projeto pedido
-router.get('/', validate({ query: z.object({ projetoId: z.uuid().optional(), ativos: z.coerce.boolean().optional() }) }), async (req, res) => {
+router.get('/', validate({ query: z.object({ projetoId: z.guid().optional(), ativos: z.coerce.boolean().optional() }) }), async (req, res) => {
   const { projetoId, ativos } = req.validated.query;
   await conferirLeitura(req, projetoId);
   const q = db('tipoRevisao').where((w: any) => {
@@ -118,7 +118,7 @@ router.delete('/:id', validate({ params: idParams }), async (req, res) => {
 // RF18: novo tipo a partir de um existente (cópia)
 router.post(
   '/:id/copiar',
-  validate({ params: idParams, body: z.object({ nome: z.string().trim().min(1).max(120), projetoId: z.uuid().nullable().optional(), comoSubtipo: z.boolean().optional() }) }),
+  validate({ params: idParams, body: z.object({ nome: z.string().trim().min(1).max(120), projetoId: z.guid().nullable().optional(), comoSubtipo: z.boolean().optional() }) }),
   async (req, res) => {
     const origem = await carregar(req.validated.params.id);
     await conferirLeitura(req, origem.projetoId);
@@ -166,7 +166,7 @@ router.post('/:id/etapas', validate({ params: idParams, body: etapaSchema }), as
   res.status(201).json(await db('etapaModelo').where({ id }).first());
 });
 
-router.put('/:id/etapas/ordem', validate({ params: idParams, body: z.object({ ids: z.array(z.uuid()).min(1) }) }), async (req, res) => {
+router.put('/:id/etapas/ordem', validate({ params: idParams, body: z.object({ ids: z.array(z.guid()).min(1) }) }), async (req, res) => {
   const t = await carregar(req.validated.params.id);
   await conferirEscrita(req, t.projetoId);
   await db.transaction((trx) => reordenar(trx, 'etapaModelo', { tipoRevisaoId: t.id }, req.validated.body.ids));
@@ -175,7 +175,7 @@ router.put('/:id/etapas/ordem', validate({ params: idParams, body: z.object({ id
 
 router.patch(
   '/:id/etapas/:etapaId',
-  validate({ params: idParams.extend({ etapaId: z.uuid() }), body: etapaSchema.omit({ ordem: true }).partial() }),
+  validate({ params: idParams.extend({ etapaId: z.guid() }), body: etapaSchema.omit({ ordem: true }).partial() }),
   async (req, res) => {
     const t = await carregar(req.validated.params.id);
     await conferirEscrita(req, t.projetoId);
@@ -188,7 +188,7 @@ router.patch(
   },
 );
 
-router.delete('/:id/etapas/:etapaId', validate({ params: idParams.extend({ etapaId: z.uuid() }) }), async (req, res) => {
+router.delete('/:id/etapas/:etapaId', validate({ params: idParams.extend({ etapaId: z.guid() }) }), async (req, res) => {
   const t = await carregar(req.validated.params.id);
   await conferirEscrita(req, t.projetoId);
   const total = await db('etapaModelo').where({ tipoRevisaoId: t.id }).count({ n: '*' }).first();

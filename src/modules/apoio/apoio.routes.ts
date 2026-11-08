@@ -28,7 +28,7 @@ apoioDoProjeto.use(
 // RF45: comentários em itens do protocolo, documentos e respostas
 const ENTIDADES = ['protocolo', 'questao_analise', 'criterio', 'documento', 'revisao', 'resposta', 'analise', 'matriz_sintese_item', 'discussao_item'] as const;
 
-apoioDoProjeto.get('/comentarios', validate({ query: z.object({ entidade: z.enum(ENTIDADES).optional(), entidadeId: z.uuid().optional() }) }), async (req, res) => {
+apoioDoProjeto.get('/comentarios', validate({ query: z.object({ entidade: z.enum(ENTIDADES).optional(), entidadeId: z.guid().optional() }) }), async (req, res) => {
   const q = db('comentario as c').join('usuario as u', 'u.id', 'c.autorId').where('c.projetoId', req.projeto!.id).select('c.*', 'u.nome as autorNome').orderBy('c.criadoEm');
   if (req.validated.query.entidade) q.where('c.entidade', req.validated.query.entidade);
   if (req.validated.query.entidadeId) q.where('c.entidadeId', req.validated.query.entidadeId);
@@ -37,7 +37,7 @@ apoioDoProjeto.get('/comentarios', validate({ query: z.object({ entidade: z.enum
 
 apoioDoProjeto.post(
   '/comentarios',
-  validate({ body: z.object({ entidade: z.enum(ENTIDADES), entidadeId: z.uuid(), texto: z.string().trim().min(1).max(10_000), paiId: z.uuid().nullable().optional() }) }),
+  validate({ body: z.object({ entidade: z.enum(ENTIDADES), entidadeId: z.guid(), texto: z.string().trim().min(1).max(10_000), paiId: z.guid().nullable().optional() }) }),
   async (req, res) => {
     if (req.papel === 'LEITOR') throw AppError.forbidden('Leitores não comentam');
     const d = req.validated.body;
@@ -102,9 +102,11 @@ apoioDoProjeto.get('/busca', validate({ query: z.object({ q: z.string().trim().m
   res.json({ documentos, respostas, citacoes });
 });
 
-// RF42: exportação do projeto no layout da planilha modelo (gerada no worker)
-apoioDoProjeto.post('/exportar', validate({ body: z.object({ formato: z.enum(['xlsx']).optional() }) }), async (req, res) => {
-  const tarefaId = await enfileirar('exportar-projeto', { projetoId: req.projeto!.id, usuarioId: req.user!.id });
+// RF42: exportação do projeto (gerada no worker): planilha modelo (xlsx, padrão) ou PDF do projeto
+// inteiro — protocolo, relatórios das revisões e análises
+apoioDoProjeto.post('/exportar', validate({ body: z.object({ formato: z.enum(['xlsx', 'pdf']).optional() }) }), async (req, res) => {
+  const fila = req.validated.body.formato === 'pdf' ? 'gerar-pdf-projeto' : 'exportar-projeto';
+  const tarefaId = await enfileirar(fila, { projetoId: req.projeto!.id, usuarioId: req.user!.id });
   res.status(202).json({ tarefaId, acompanhar: `/api/v1/tarefas/${tarefaId}` });
 });
 
@@ -117,7 +119,7 @@ apoio.get('/notificacoes', validate({ query: z.object({ naoLidas: z.coerce.boole
   res.json(await q);
 });
 
-apoio.post('/notificacoes/lidas', validate({ body: z.object({ ids: z.array(z.uuid()).optional() }) }), async (req, res) => {
+apoio.post('/notificacoes/lidas', validate({ body: z.object({ ids: z.array(z.guid()).optional() }) }), async (req, res) => {
   const q = db('notificacao').where({ usuarioId: req.user!.id }).whereNull('lidaEm');
   if (req.validated.body.ids) q.whereIn('id', req.validated.body.ids);
   res.json({ marcadas: await q.update({ lidaEm: new Date() }) });

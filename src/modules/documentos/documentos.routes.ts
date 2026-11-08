@@ -22,14 +22,14 @@ export const documentoSchema = z.object({
   fatorImpacto: z.number().min(0).max(9999).nullable().optional(),
   idiomaId: z.number().int().positive().nullable().optional(),
   tipoDocumentoId: z.number().int().positive().nullable().optional(),
-  baseDadosId: z.uuid().nullable().optional(),
+  baseDadosId: z.guid().nullable().optional(),
   link: z.url().max(1000).nullable().optional(),
   doi: optText(255),
   citacoes: z.number().int().min(0).nullable().optional(),
   refNbr: longText(5000),
   refApa: longText(5000),
   refApa2: longText(5000),
-  temaIds: z.array(z.uuid()).max(50).optional(),
+  temaIds: z.array(z.guid()).max(50).optional(),
 });
 
 // RN11 + RF27: normaliza e completa as referências que vierem vazias
@@ -77,7 +77,7 @@ documentosDoProjeto.get(
       q: z.string().trim().max(200).optional(),
       ano: z.coerce.number().int().optional(),
       tipoDocumentoId: z.coerce.number().int().optional(),
-      temaId: z.uuid().optional(),
+      temaId: z.guid().optional(),
       semRevisao: z.coerce.boolean().optional(),
     }),
   }),
