@@ -1563,6 +1563,18 @@
               "type": "string",
               "minLength": 10
             }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1",
+                "true"
+              ]
+            }
           }
         ],
         "responses": {

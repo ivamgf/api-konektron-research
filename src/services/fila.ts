@@ -12,7 +12,12 @@ export async function enfileirar(fila: string, payload: Record<string, unknown>,
   return Number(id);
 }
 
-export async function reservar(token = `${hostname()}:${uuid()}`): Promise<Tarefa | undefined> {
+// O token cabe em bloqueado_por (VARCHAR(64)): o hostname do dyno do Heroku é um UUID de 36 caracteres e,
+// sem o modo estrito do MySQL, um token maior era truncado sem erro — a reserva gravava e o SELECT abaixo
+// nunca achava a tarefa, que ficava presa em EXECUTANDO.
+export const tokenDoWorker = () => `${hostname().slice(0, 20)}:${uuid()}`.slice(0, 64);
+
+export async function reservar(token = tokenDoWorker()): Promise<Tarefa | undefined> {
   const agora = new Date();
   // devolve à fila tarefas presas de um worker que caiu
   await db('filaTarefa')
