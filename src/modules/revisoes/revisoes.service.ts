@@ -147,3 +147,32 @@ export async function painel(revisaoId: string) {
     },
   };
 }
+
+/**
+ * Recalcula a situação dos documentos depois de decisões (triagem, importação, edição em etapa concluída):
+ * excluído em alguma etapa → EXCLUIDO; com a inclusão já concluída e selecionado na última triagem
+ * antes dela → INCLUIDO; senão EM_TRIAGEM. Duplicados (duplicadoDeId) e origens que entram
+ * direto como incluídas (revisão anterior, integrados) não mudam.
+ */
+export async function recalcularSituacao(trx: Trx, revisaoId: string, rdIds: string[]) {
+  if (!rdIds.length) return;
+  const inclusao = await trx('revisaoEtapa').where({ revisaoId, categoria: 'INCLUSAO' }).orderBy('ordem').first();
+  const ultimaTriagem = inclusao?.status === 'CONCLUIDA'
+    ? await trx('revisaoEtapa').where({ revisaoId, exigeTriagem: true }).where('ordem', '<', inclusao.ordem).orderBy('ordem', 'desc').first('id')
+    : null;
+  for (let i = 0; i < rdIds.length; i += 500) {
+    const lote = rdIds.slice(i, i + 500);
+    const rds = await trx('revisaoDocumento').where({ revisaoId }).whereIn('id', lote).whereIn('origem', ['BUSCA', 'MANUAL']).select('id', 'situacao', 'duplicadoDeId');
+    const excluidos = new Set((await trx('triagemResultado').whereIn('revisaoDocumentoId', lote).where({ decisaoFinal: 'EXCLUIDO' }).select('revisaoDocumentoId')).map((r: any) => r.revisaoDocumentoId));
+    const selecionados = ultimaTriagem
+      ? new Set((await trx('triagemResultado').whereIn('revisaoDocumentoId', lote).where({ revisaoEtapaId: ultimaTriagem.id, decisaoFinal: 'SELECIONADO' }).select('revisaoDocumentoId')).map((r: any) => r.revisaoDocumentoId))
+      : new Set<string>();
+    const alvo: Record<string, string[]> = { EXCLUIDO: [], INCLUIDO: [], EM_TRIAGEM: [] };
+    for (const rd of rds) {
+      if (rd.duplicadoDeId && rd.situacao === 'EXCLUIDO') continue;
+      const s = excluidos.has(rd.id) ? 'EXCLUIDO' : selecionados.has(rd.id) ? 'INCLUIDO' : 'EM_TRIAGEM';
+      if (s !== rd.situacao) alvo[s].push(rd.id);
+    }
+    for (const [situacao, ids] of Object.entries(alvo)) if (ids.length) await trx('revisaoDocumento').whereIn('id', ids).update({ situacao });
+  }
+}

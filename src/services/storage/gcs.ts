@@ -1,5 +1,6 @@
 import { env } from '#config/env.ts';
 import type { StorageProvider } from './index.ts';
+import { disposicao } from './disposicao.ts';
 
 // Google Cloud Storage: obrigatório no Heroku. O cliente é carregado sob demanda.
 export class GcsStorageProvider implements StorageProvider {
@@ -27,12 +28,12 @@ export class GcsStorageProvider implements StorageProvider {
     await (await this.bucket()).file(chave).delete({ ignoreNotFound: true });
   }
 
-  async urlAssinada(chave: string, minutos = 15, nomeArquivo?: string) {
+  async urlAssinada(chave: string, minutos = 15, nomeArquivo?: string, mimeType?: string) {
     const [url] = await (await this.bucket()).file(chave).getSignedUrl({
       version: 'v4',
       action: 'read',
       expires: Date.now() + minutos * 60_000,
-      ...(nomeArquivo ? { responseDisposition: `attachment; filename="${nomeArquivo.replace(/"/g, '')}"` } : {}),
+      ...(nomeArquivo ? { responseDisposition: disposicao(nomeArquivo, mimeType) } : {}),
     });
     return url as string;
   }

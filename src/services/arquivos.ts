@@ -28,7 +28,7 @@ export async function salvarArquivo(
 export async function urlDoArquivo(arquivoId: string) {
   const a = await db('arquivo').where({ id: arquivoId }).first();
   if (!a) return null;
-  return { url: await storage().urlAssinada(a.chaveStorage, 15, a.nomeOriginal), arquivo: a };
+  return { url: await storage().urlAssinada(a.chaveStorage, 15, a.nomeOriginal, a.mimeType), arquivo: a };
 }
 
 export async function lerArquivo(arquivoId: string) {

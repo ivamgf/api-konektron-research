@@ -14,6 +14,7 @@ import { enfileirar } from '#services/fila.ts';
 import { eSistematico } from '#modules/tipos-revisao/tiposRevisao.service.ts';
 import { contagensEtapa, copiarChecklist, elegiveis, instanciarEtapas, painel } from './revisoes.service.ts';
 import { fluxogramaSvg } from './fluxograma.ts';
+import { importarCsvDaEtapa } from './importarEtapa.ts';
 import { detectarDuplicados } from '#modules/documentos/duplicados.ts';
 
 // ------------------------------------------------ /projetos/:id/revisoes
@@ -173,21 +174,34 @@ revisoes.patch(
   validate({
     body: z.object({
       acao: z.enum(['INICIAR', 'CONCLUIR', 'DISPENSAR', 'REABRIR']).optional(),
+      // dados da etapa: podem ser corrigidos em qualquer situação
       nome: z.string().trim().min(1).max(120).optional(),
+      exigeTriagem: z.boolean().optional(),
+      permiteExclusao: z.boolean().optional(),
+      iniciadaEm: z.iso.datetime({ offset: true }).nullable().optional(),
+      concluidaEm: z.iso.datetime({ offset: true }).nullable().optional(),
+      justificativaDispensa: z.string().trim().min(3).max(5000).optional(),
       justificativa: z.string().trim().min(3).max(5000).optional(),
     }),
   }),
   async (req, res) => {
     const revisaoId = String(req.params.id);
     const etapaId = String(req.params.etapaId);
-    const { acao, nome, justificativa } = req.validated.body;
+    const { acao, justificativa, ...dados } = req.validated.body;
     await db.transaction(async (trx) => {
       const etapas = await trx('revisaoEtapa').where({ revisaoId }).orderBy('ordem').forUpdate();
       const e = etapas.find((x: any) => x.id === etapaId);
       if (!e) throw AppError.notFound('Etapa');
-      if (nome) {
-        if (e.status !== 'PENDENTE') throw AppError.conflict('Só é possível renomear etapas que ainda não começaram');
-        await trx('revisaoEtapa').where({ id: e.id }).update({ nome });
+      if (Object.keys(dados).length) {
+        const novo: Record<string, unknown> = { ...dados };
+        if (dados.iniciadaEm !== undefined) novo.iniciadaEm = dados.iniciadaEm ? new Date(dados.iniciadaEm) : null;
+        if (dados.concluidaEm !== undefined) novo.concluidaEm = dados.concluidaEm ? new Date(dados.concluidaEm) : null;
+        const inicio = (novo.iniciadaEm ?? e.iniciadaEm) as Date | null;
+        const fim = (novo.concluidaEm ?? e.concluidaEm) as Date | null;
+        if (inicio && fim && new Date(fim) < new Date(inicio)) throw AppError.unprocessable('A data de fim não pode ser anterior à de início', { campo: 'concluidaEm' });
+        if (dados.justificativaDispensa && e.status !== 'DISPENSADA') throw AppError.unprocessable('Só etapas dispensadas têm justificativa de dispensa', { campo: 'justificativaDispensa' });
+        await trx('revisaoEtapa').where({ id: e.id }).update(novo);
+        await auditar({ req, entidade: 'revisao_etapa', entidadeId: e.id, acao: 'ALTERAR', antes: Object.fromEntries(Object.keys(dados).map((k) => [k, e[k]])), depois: dados }, trx);
       }
       if (!acao) return;
       const anteriores = etapas.filter((x: any) => x.ordem < e.ordem);
@@ -242,6 +256,35 @@ revisoes.patch(
       }
     });
     res.json(await detalhe(revisaoId));
+  },
+);
+
+// Importação de CSV por etapa: documentos com a decisão da etapa (triagem feita fora do app)
+const uploadCsv = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+revisoes.post(
+  '/:id/etapas/:etapaId/importar',
+  requirePapel(...EDITA),
+  uploadCsv.single('arquivo'),
+  validate({ body: z.object({ substituir: z.enum(['true', 'false']).optional(), simular: z.enum(['true', 'false']).optional() }) }),
+  async (req, res) => {
+    if (!req.file) throw AppError.unprocessable('Envie o arquivo CSV no campo "arquivo"');
+    const ext = (req.file.originalname.split('.').pop() ?? '').toLowerCase();
+    if (!['csv', 'txt', 'tsv'].includes(ext)) throw AppError.unprocessable('Envie um arquivo CSV (separado por vírgula ou ponto e vírgula)');
+    const revisaoId = String(req.params.id);
+    const relatorio = await importarCsvDaEtapa({
+      revisaoId,
+      projetoId: req.projeto!.id,
+      etapaId: String(req.params.etapaId),
+      usuarioId: req.user!.id,
+      nomeArquivo: req.file.originalname,
+      texto: req.file.buffer.toString('utf8'),
+      substituir: req.validated.body.substituir === 'true',
+      simular: req.validated.body.simular === 'true',
+    });
+    if (relatorio.simulado) return res.json({ ...relatorio, avisos: relatorio.avisos.slice(0, 200), totalAvisos: relatorio.avisos.length });
+    if (relatorio.documentosCriados) await detectarDuplicados(revisaoId, req);
+    auditar({ req, entidade: 'revisao_etapa', entidadeId: String(req.params.etapaId), acao: 'ALTERAR', depois: { arquivo: req.file.originalname, ...relatorio, avisos: relatorio.avisos.length } });
+    res.json({ ...relatorio, avisos: relatorio.avisos.slice(0, 200), totalAvisos: relatorio.avisos.length });
   },
 );
 
