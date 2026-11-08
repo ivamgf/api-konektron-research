@@ -170,7 +170,7 @@ router.put('/:etapaId/decisoes', requirePapel(...EDITA), validate({ body: decisa
   const pedidos = [...new Set<string>(ids)];
   const validos: string[] = [];
   for (let i = 0; i < pedidos.length; i += 500) {
-    validos.push(...(await elegiveis(etapa).whereIn('rd.id', pedidos.slice(i, i + 500)).pluck('rd.id')));
+    validos.push(...(await elegiveis(etapa).whereIn('rd.id', pedidos.slice(i, i + 500)).select('rd.id').then((rs: any[]) => rs.map((r) => r.id as string))));
   }
   if (!validos.length) throw AppError.unprocessable('Nenhum dos documentos está elegível nesta etapa (RN09)', undefined, 'NAO_ELEGIVEL');
   await conferirCriterio(req, d.criterioId);
