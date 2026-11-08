@@ -59,7 +59,7 @@ export function crudRouter(o: Opcoes) {
   });
 
   if (o.ordered) {
-    router.put('/ordem', ...write, validate({ body: z.object({ ids: z.array(z.uuid()).min(1) }) }), async (req, res) => {
+    router.put('/ordem', ...write, validate({ body: z.object({ ids: z.array(z.guid()).min(1) }) }), async (req, res) => {
       const scope = await o.scope(req);
       await db.transaction((trx) => reordenar(trx, o.table, scope, req.validated.body.ids));
       res.json(await db(o.table).where(scope).orderBy('ordem'));

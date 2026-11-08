@@ -20,7 +20,7 @@ import { detectarDuplicados } from '#modules/documentos/duplicados.ts';
 export const revisoesDoProjeto = Router({ mergeParams: true });
 
 const etapaAjustada = z.object({
-  etapaModeloId: z.uuid().nullable().optional(),
+  etapaModeloId: z.guid().nullable().optional(),
   nome: z.string().trim().min(1).max(120),
   categoria: z.enum(['PROTOCOLO', 'BUSCA', 'DEDUPLICACAO', 'TRIAGEM', 'INCLUSAO', 'ANALISE', 'SINTESE', 'DISCUSSAO', 'CHECKLIST', 'LIVRE']),
   exigeTriagem: z.boolean().optional(),
@@ -46,9 +46,9 @@ revisoesDoProjeto.post(
   validate({
     body: z.object({
       titulo: z.string().trim().min(3).max(300),
-      tipoRevisaoId: z.uuid(),
-      diretrizRelatoId: z.uuid().nullable().optional(),
-      checklistModeloId: z.uuid().nullable().optional(),
+      tipoRevisaoId: z.guid(),
+      diretrizRelatoId: z.guid().nullable().optional(),
+      checklistModeloId: z.guid().nullable().optional(),
       doisRevisores: z.boolean().optional(),
       etapas: z.array(etapaAjustada).min(1).max(40).optional(),
     }),
@@ -112,8 +112,8 @@ revisoes.patch(
       titulo: z.string().trim().min(3).max(300).optional(),
       status: z.enum(['PLANEJADA', 'EM_ANDAMENTO', 'CONCLUIDA', 'CANCELADA']).optional(),
       doisRevisores: z.boolean().optional(),
-      diretrizRelatoId: z.uuid().nullable().optional(),
-      tipoRevisaoId: z.uuid().optional(),
+      diretrizRelatoId: z.guid().nullable().optional(),
+      tipoRevisaoId: z.guid().optional(),
     }),
   }),
   async (req, res) => {
@@ -154,7 +154,7 @@ revisoes.get('/:id/etapas', async (req, res) => {
 });
 
 // Renomear/reordenar só etapas que ainda não começaram
-revisoes.put('/:id/etapas/ordem', requirePapel(...DONO), validate({ body: z.object({ ids: z.array(z.uuid()).min(1) }) }), async (req, res) => {
+revisoes.put('/:id/etapas/ordem', requirePapel(...DONO), validate({ body: z.object({ ids: z.array(z.guid()).min(1) }) }), async (req, res) => {
   const revisaoId = String(req.params.id);
   await db.transaction(async (trx) => {
     const atuais = await trx('revisaoEtapa').where({ revisaoId }).orderBy('ordem');
@@ -269,8 +269,8 @@ revisoes.get('/:id/buscas', async (req, res) => {
 });
 
 const buscaSchema = z.object({
-  baseDadosId: z.uuid(),
-  stringBuscaId: z.uuid().nullable().optional(),
+  baseDadosId: z.guid(),
+  stringBuscaId: z.guid().nullable().optional(),
   expressaoUsada: z.string().trim().min(1).max(10_000),
   campo: z.enum(['TITULO', 'RESUMO', 'PALAVRAS_CHAVE', 'TODOS']).optional(),
   filtros: longText(5000),
@@ -335,9 +335,9 @@ revisoes.post(
   requirePapel(...EDITA),
   validate({
     body: z.object({
-      documentoIds: z.array(z.uuid()).min(1).max(500),
+      documentoIds: z.array(z.guid()).min(1).max(500),
       origem: z.enum(['REVISAO_ANTERIOR', 'INTEGRADO', 'MANUAL']),
-      categoriaId: z.uuid().nullable().optional(),
+      categoriaId: z.guid().nullable().optional(),
     }),
   }),
   async (req, res) => {
@@ -367,7 +367,7 @@ revisoes.post(
 revisoes.patch(
   '/:id/documentos/:rdId',
   requirePapel(...EDITA),
-  validate({ body: z.object({ categoriaId: z.uuid().nullable() }) }),
+  validate({ body: z.object({ categoriaId: z.guid().nullable() }) }),
   async (req, res) => {
     const n = await db('revisaoDocumento').where({ id: String(req.params.rdId), revisaoId: String(req.params.id) }).update(req.validated.body);
     if (!n) throw AppError.notFound('Documento da revisão');
@@ -408,7 +408,7 @@ const itemChecklist = z.object({ situacao: z.enum(['ND', 'REALIZADO', 'PENDENTE'
 revisoes.patch(
   '/:id/checklist',
   requirePapel(...EDITA),
-  validate({ body: z.object({ itens: z.array(itemChecklist.extend({ id: z.uuid() })).min(1).max(200) }) }),
+  validate({ body: z.object({ itens: z.array(itemChecklist.extend({ id: z.guid() })).min(1).max(200) }) }),
   async (req, res) => {
     const revisaoId = String(req.params.id);
     await db.transaction(async (trx) => {

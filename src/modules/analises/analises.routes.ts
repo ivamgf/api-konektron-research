@@ -82,12 +82,12 @@ analisesDoProjeto.post(
       .object({
         nome: z.string().trim().min(1).max(200),
         descricao: longText(5000),
-        tipoRevisaoId: z.uuid().optional(),
-        novoTipo: z.object({ nome: z.string().trim().min(1).max(120), tipoPaiId: z.uuid().nullable().optional(), sistematica: z.boolean().optional() }).optional(),
-        revisaoId: z.uuid().nullable().optional(),
+        tipoRevisaoId: z.guid().optional(),
+        novoTipo: z.object({ nome: z.string().trim().min(1).max(120), tipoPaiId: z.guid().nullable().optional(), sistematica: z.boolean().optional() }).optional(),
+        revisaoId: z.guid().nullable().optional(),
         fonte: z.enum(FONTES).optional(),
-        questaoIds: z.array(z.uuid()).optional(),
-        documentoIds: z.array(z.uuid()).optional(),
+        questaoIds: z.array(z.guid()).optional(),
+        documentoIds: z.array(z.guid()).optional(),
       })
       .refine((d) => !!d.tipoRevisaoId !== !!d.novoTipo, { message: 'Informe tipoRevisaoId ou novoTipo', path: ['tipoRevisaoId'] }),
   }),
@@ -154,7 +154,7 @@ analises.delete('/:id', requirePapel(...DONO), async (req, res) => {
   res.status(204).end();
 });
 
-analises.put('/:id/questoes', requirePapel(...EDITA), validate({ body: z.object({ questaoIds: z.array(z.uuid()).min(1) }) }), async (req, res) => {
+analises.put('/:id/questoes', requirePapel(...EDITA), validate({ body: z.object({ questaoIds: z.array(z.guid()).min(1) }) }), async (req, res) => {
   const analiseId = String(req.params.id);
   const protocolo = await db('protocolo').where({ projetoId: req.projeto!.id }).first('id');
   const validas = await db('questaoAnalise').where({ protocoloId: protocolo.id }).whereIn('id', req.validated.body.questaoIds).select('id');
@@ -178,7 +178,7 @@ analises.get('/:id/documentos', async (req, res) => {
   );
 });
 
-analises.post('/:id/documentos', requirePapel(...EDITA), validate({ body: z.object({ documentoIds: z.array(z.uuid()).min(1).max(500) }) }), async (req, res) => {
+analises.post('/:id/documentos', requirePapel(...EDITA), validate({ body: z.object({ documentoIds: z.array(z.guid()).min(1).max(500) }) }), async (req, res) => {
   const ids = (await db('documento').where({ projetoId: req.projeto!.id }).whereIn('id', req.validated.body.documentoIds).select('id')).map((r: any) => r.id);
   const n = await db.transaction((trx) => adicionarDocumentos(trx, String(req.params.id), ids));
   res.status(201).json({ adicionados: n });
@@ -214,7 +214,7 @@ analises.put(
   requirePapel(...EDITA),
   validate({
     body: z.object({
-      respostas: z.array(z.object({ questaoAnaliseId: z.uuid(), texto: z.string().max(65_000).nullable() })).max(200).optional(),
+      respostas: z.array(z.object({ questaoAnaliseId: z.guid(), texto: z.string().max(65_000).nullable() })).max(200).optional(),
       consideracoes: longText(),
       observacoes: longText(),
     }),

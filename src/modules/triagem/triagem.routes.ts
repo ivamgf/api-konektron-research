@@ -17,7 +17,7 @@ const decisaoSchema = z
   .object({
     decisao: z.enum(['SELECIONADO', 'EXCLUIDO']),
     motivo: z.enum(['CRITERIO', 'DUPLICADO', 'SEM_ACESSO', 'OUTRO']).nullable().optional(),
-    criterioId: z.uuid().nullable().optional(),
+    criterioId: z.guid().nullable().optional(),
     observacao: z.string().trim().max(5000).nullable().optional(),
   })
   // RN10: exclusão exige motivo; CRITERIO exige o critério; OUTRO exige texto
