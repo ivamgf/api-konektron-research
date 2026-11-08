@@ -3,7 +3,7 @@ import { AppError } from '#utils/AppError.ts';
 import { uuid } from '#utils/tokens.ts';
 import { limparDoi, normalizarTitulo } from '#utils/normalize.ts';
 import { referenciaApa, referenciaNbr } from '#utils/referencias.ts';
-import { lerCsv, tabelaParaRegistros, type Registro } from '#jobs/parsers.ts';
+import { indiceDoCabecalho, lerCsv, tabelaParaRegistros, umaLinha, type Registro } from '#jobs/parsers.ts';
 import { recalcularSituacao } from './revisoes.service.ts';
 
 /**
@@ -67,7 +67,9 @@ const EXTRAS = {
   observacao: ['observacao', 'observacoes', 'obs', 'notes', 'comentario', 'comentarios'],
   base: ['base', 'base de dados', 'database', 'fonte', 'source'],
   // layout da planilha RIL (Ref-NBR, Ref-APA, Ref-APA 2, Temas)
-  refNbr: ['ref-nbr', 'ref nbr', 'referencia nbr', 'nbr'],
+  refNbr: ['ref-nbr', 'ref nbr', 'referencia nbr', 'nbr', 'referencias', 'referencia', 'referencia completa'],
+  // planilhas de integrados/revisão anterior: "Como citar" (referência completa ou citação no texto)
+  comoCitar: ['como citar', 'citacao', 'citar'],
   refApa: ['ref-apa', 'ref apa', 'referencia apa', 'apa'],
   refApa2: ['ref-apa 2', 'ref-apa2', 'ref apa 2', 'referencia apa 2'],
   temas: ['temas', 'tema', 'themes', 'topics'],
@@ -92,6 +94,11 @@ const ORIGENS: Record<string, Origem> = {
   search: 'BUSCA',
   triagem: 'BUSCA',
   'base de dados': 'BUSCA',
+  // nome da aba da planilha (linha de título antes do cabeçalho)
+  'referencial teorico': 'REVISAO_ANTERIOR',
+  'rev-narrativa': 'REVISAO_ANTERIOR',
+  'revisao narrativa': 'REVISAO_ANTERIOR',
+  'revisoes anteriores': 'REVISAO_ANTERIOR',
 };
 export const origemDoTexto = (v: string | null | undefined): Origem | null =>
   v ? (ORIGENS[semAcento(v).replace(/\s+/g, ' ')] ?? null) : null;
@@ -152,8 +159,17 @@ const MOTIVOS: Record<string, Decisao['motivo']> = {
 };
 
 /** Lê o CSV: campos do documento (mesmos cabeçalhos da importação de buscas) + decisão, motivo, critério, observação e base */
-export function lerCsvDaEtapa(texto: string): { linhas: Linha[]; avisos: Relatorio['avisos'] } {
-  const tabela = lerCsv(texto);
+export function lerCsvDaEtapa(texto: string): {
+  linhas: Linha[];
+  avisos: Relatorio['avisos'];
+  /** origem indicada pela linha de título da planilha (ex.: "Integrados", "Referencial Teórico") */
+  origemDoArquivo: Origem | null;
+} {
+  const todas = lerCsv(texto);
+  const inicio = indiceDoCabecalho(todas);
+  const titulo = inicio > 0 ? todas.slice(0, inicio).flat().map((c) => String(c ?? '').trim()).filter(Boolean)[0] : null;
+  const origemDoArquivo = titulo ? origemDoTexto(titulo) : null;
+  const tabela = todas.slice(inicio);
   if (tabela.length < 2) throw AppError.unprocessable('O CSV está vazio ou só tem o cabeçalho');
   if (tabela.length - 1 > MAX_LINHAS)
     throw AppError.unprocessable(`O CSV passa de ${MAX_LINHAS} linhas; divida o arquivo`);
@@ -175,12 +191,13 @@ export function lerCsvDaEtapa(texto: string): { linhas: Linha[]; avisos: Relator
     refApa2: col('refApa2'),
     temas: col('temas'),
     origem: col('origem'),
+    comoCitar: col('comoCitar'),
   };
   const avisos = [...erros];
   // tabelaParaRegistros pula linhas sem título: refaz o mapeamento linha → registro pela ordem
   const linhasComTitulo = tabela
     .slice(1)
-    .map((l, i) => ({ l, n: i + 2 }))
+    .map((l, i) => ({ l, n: inicio + i + 2 }))
     .filter(({ n }) => !erros.some((e) => e.linha === n));
   const linhas: Linha[] = registros.map((r, i) => {
     const { l, n } = linhasComTitulo[i];
@@ -224,7 +241,9 @@ export function lerCsvDaEtapa(texto: string): { linhas: Linha[]; avisos: Relator
         linha: n,
         mensagem: `origem "${origemTxt}" não reconhecida (use Busca, Revisão anterior ou Integrado); usada a origem escolhida na importação`,
       });
-    const refNbr = vazio(v(idx.refNbr));
+    // "Como citar" com a referência completa vale como NBR; "(AUTOR, 2020)" é só a citação no texto
+    const comoCitar = umaLinha(vazio(v(idx.comoCitar)));
+    const refNbr = umaLinha(vazio(v(idx.refNbr))) ?? (comoCitar && !/^\(.*\)$/.test(comoCitar) ? comoCitar : null);
     const refApa = vazio(v(idx.refApa));
     return {
       ...limpo,
@@ -248,7 +267,7 @@ export function lerCsvDaEtapa(texto: string): { linhas: Linha[]; avisos: Relator
       ],
     };
   });
-  return { linhas, avisos };
+  return { linhas, avisos, origemDoArquivo };
 }
 
 /** Documentos por DOI (sem diferenciar maiúsculas) e por título normalizado (RN11) */
@@ -322,7 +341,14 @@ export async function importarCsvDaEtapa(o: {
   /** origem dos documentos sem a coluna "Origem" (padrão: busca, que passa pela triagem) */
   origem?: Origem;
 }): Promise<Relatorio & { simulado: boolean }> {
-  const { linhas, avisos } = lerCsvDaEtapa(o.texto);
+  const { linhas, avisos, origemDoArquivo } = lerCsvDaEtapa(o.texto);
+  if (!o.origem && origemDoArquivo) {
+    o = { ...o, origem: origemDoArquivo };
+    avisos.push({
+      linha: 1,
+      mensagem: `origem "${origemDoArquivo === 'INTEGRADO' ? 'Integrados' : 'Revisão anterior'}" identificada pelo título da planilha`,
+    });
+  }
   let simulado: Relatorio | undefined;
   try {
     return await db.transaction(async (trx) => {
@@ -454,7 +480,7 @@ async function importar(
       );
     };
     const tipos = Object.fromEntries(
-      (await trx('tipoDocumento').select('id', 'nome')).map((x: any) => [x.nome, x.id]),
+      (await trx('tipoDocumento').select('id', 'nome')).map((x: any) => [semAcento(x.nome), x.id]),
     );
     const rel: Relatorio = {
       linhas: linhas.length,
@@ -486,7 +512,8 @@ async function importar(
           existente.origem = origem;
         }
       } else {
-        const base = baseDe(l.base);
+        // revisão anterior e integrados sem base informada ficam sem base (não contam como "Outra")
+        const base = l.base || origem === 'BUSCA' ? baseDe(l.base) : null;
         const busca = origem === 'BUSCA' ? await buscaDa(base) : null;
         let documentoId = noProjeto.buscar(doi, tituloNormalizado)?.id as string | undefined;
         if (documentoId) rel.documentosDoProjeto++;
@@ -508,8 +535,8 @@ async function importar(
             resumo: l.resumo,
             palavrasChave: l.palavrasChave,
             citacoes: l.citacoes ?? null,
-            tipoDocumentoId: (l.tipo && tipos[l.tipo]) || null,
-            baseDadosId: base.id,
+            tipoDocumentoId: (l.tipo && tipos[semAcento(l.tipo)]) || null,
+            baseDadosId: base?.id ?? null,
             idiomaId: idiomaId(l.idioma),
             // referências da planilha têm prioridade sobre as geradas
             refNbr: l.refNbr ?? referenciaNbr(campos),

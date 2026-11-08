@@ -64,7 +64,7 @@ test('planilha RIL: Situação, Base, Temas, Ref-NBR/APA, Idioma, "N/D" vazio e 
   assert.equal(a.refNbr, 'MUDASSIR, G. et al. Toward.');
   assert.equal(a.refApa2, 'Mudassir, G. (2021). Acesso em.');
   assert.equal(b.decisao?.decisao, 'EXCLUIDO');
-  assert.equal(b.autores, 'Haneef R,\nTijhuis M', 'campo com quebra de linha entre aspas');
+  assert.equal(b.autores, 'Haneef R, Tijhuis M', 'campo com quebra de linha entre aspas vira uma linha só');
   assert.equal(b.doi, '10.1186/s13690-021-00770-6');
   assert.equal(doiNoTexto('Lancet. doi: 10.1016/S2215-0366(16)30089-X.'), '10.1016/S2215-0366(16)30089-X');
   assert.equal(doiNoTexto('sem doi', null), null);
@@ -89,4 +89,46 @@ test('coluna Origem marca revisão anterior e integrados (fonte secundária)', (
   assert.ok(avisos.some((a) => a.linha === 7 && /outra coisa/.test(a.mensagem)));
   assert.equal(origemDoTexto('INTEGRADO'), 'INTEGRADO');
   assert.equal(origemDoTexto('revisao_anterior'), 'REVISAO_ANTERIOR');
+});
+
+test('planilha Integrados: linha de título, "Como citar" como NBR, citações "~220+" e DOI do link', () => {
+  const { linhas, origemDoArquivo, avisos } = lerCsvDaEtapa(
+    [
+      'Integrados,,,,,,,,,,,',
+      'N°,Título,Autores,Resumo,Palavras-chave,Ano,Periódico,Idioma,Link,Como citar,Citações,Base',
+      '1,"Cloudy, increasingly FAIR","Mons, B., Neylon, C.","Examina FAIR.","FAIR principles, Linked Data.",2017,"Information Services & Use, 37(1), 49–56",Inglês,https://doi.org/10.3233/ISU-170824,"MONS, B. et al. Cloudy, increasingly FAIR. Information Services & Use, v. 37, n. 1, p. 49–56, 2017.",~220+,',
+      '4,Large-scale semantic integration of linked data: A survey,"Mountantonakis, M.",Análise.,Linked Data,2019,"ACM Computing Surveys, 52(5)",Inglês,https://dl.acm.org/doi/abs/10.1145/3345551,"MOUNTANTONAKIS, M. Large-scale. 2019.",~110+,ACM',
+    ].join('\n'),
+  );
+  assert.equal(origemDoArquivo, 'INTEGRADO');
+  assert.equal(linhas.length, 2);
+  assert.equal(linhas[0].linha, 3, 'o número da linha conta a linha de título');
+  assert.equal(linhas[0].citacoes, 220);
+  assert.equal(linhas[0].doi, '10.3233/ISU-170824');
+  assert.match(linhas[0].refNbr!, /^MONS, B\. et al\./);
+  assert.equal(linhas[0].base, null);
+  assert.equal(linhas[1].base, 'ACM');
+  assert.equal(linhas[1].doi, '10.1145/3345551');
+  assert.equal(avisos.length, 0);
+});
+
+test('planilha Referencial Teórico (revisão anterior): Tipo, Referências, citação no texto e quebras de linha', () => {
+  const { linhas, origemDoArquivo } = lerCsvDaEtapa(
+    [
+      'Referencial Teórico,,,,,,,,,,,',
+      'N°,Título,Autores,Resumo,Palavras-chave,Tipo,Ano,Link,Como citar,Referências,Citações,Base',
+      '2,"Combining Data Mining and Ontology Engineering to\nenrich Ontologies","Mathieu d’Aquina, Gabriel Kronbergerb\n, and Mari",Resumo.,"data mining, ontologies",Artigo,2012,https://oa.upm.es/19551/,"(SUÁREZ-FIGUEROA; D’AQUIN; KRONBERGER, 2012)","SUÁREZ-FIGUEROA, Mari Carmen. Combining data mining. 2012.",1,N/D',
+      '4,scAAGA,"Rui Meng a","Resumo","scRNA-seq\nDeep learning\nCOVID-19 \n",Artigo,2023,,"(MENG, Rui et al., 2023)",MENG ref,85,Scopus',
+      '14,Linked data: Evolving the web into a global data space.,,,,,,,,"HEATH,        Tom;        BIZER,        Christian.        Linked        data.",,N/D',
+    ].join('\n'),
+  );
+  assert.equal(origemDoArquivo, 'REVISAO_ANTERIOR');
+  assert.equal(linhas[0].titulo, 'Combining Data Mining and Ontology Engineering to enrich Ontologies');
+  assert.equal(linhas[0].autores, 'Mathieu d’Aquina, Gabriel Kronbergerb , and Mari');
+  assert.equal(linhas[0].tipo, 'Artigo');
+  assert.equal(linhas[0].refNbr, 'SUÁREZ-FIGUEROA, Mari Carmen. Combining data mining. 2012.', 'Referências vale como NBR');
+  assert.equal(linhas[0].base, null, 'N/D é sem base');
+  assert.equal(linhas[1].palavrasChave, 'scRNA-seq; Deep learning; COVID-19');
+  assert.equal(linhas[2].refNbr, 'HEATH, Tom; BIZER, Christian. Linked data.');
+  assert.equal(linhas[2].ano, null);
 });
