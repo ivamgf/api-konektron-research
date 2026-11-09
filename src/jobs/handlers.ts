@@ -7,6 +7,15 @@ import { lerArquivo, salvarArquivo } from '#services/arquivos.ts';
 import { storage } from '#services/storage/index.ts';
 import { notificar } from '#services/notificacoes.ts';
 import { htmlParaPdf, esc, ESTILO } from '#pdf/render.ts';
+import { htmlParaDocx, MIME_DOCX } from '#pdf/docx.ts';
+
+type FormatoDocumento = 'pdf' | 'docx';
+/** Mesmo HTML em PDF (padrão) ou em Word (.docx) */
+async function gerarDocumento(html: string, titulo: string, formato: FormatoDocumento = 'pdf') {
+  return formato === 'docx'
+    ? { dados: await htmlParaDocx(html, titulo.replace(/&[a-z#0-9]+;/gi, (e) => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"' })[e] ?? e)), ext: 'docx', mime: MIME_DOCX }
+    : { dados: await htmlParaPdf(html, titulo), ext: 'pdf', mime: 'application/pdf' };
+}
 import { capa, htmlProtocolo, secoesProtocolo, type DadosProtocolo } from '#pdf/protocolo.ts';
 import { protocoloCompleto } from '#modules/protocolo/protocolo.service.ts';
 import { painel } from '#modules/revisoes/revisoes.service.ts';
@@ -103,17 +112,20 @@ async function dadosProtocolo(protocoloId: string, projetoId: string, versao: nu
 
 const gerarPdfProtocolo: Handler = async (t) => {
   const { protocoloId, projetoId, versao, secoes } = t.payload;
+  const formato: FormatoDocumento = t.payload.formato === 'docx' ? 'docx' : 'pdf';
   const { v, dados: d } = await dadosProtocolo(protocoloId, projetoId, versao ?? null, secoes ?? null);
-  const pdf = await htmlParaPdf(htmlProtocolo(d), `Protocolo de pesquisa · versão ${d.versao ?? 'em edição'}`);
+  const doc = await gerarDocumento(htmlProtocolo(d), `Protocolo de pesquisa · versão ${d.versao ?? 'em edição'}`, formato);
+  const nome = versao ? `v${versao}` : `rascunho-${carimbo()}`;
   const arquivoId = await salvarArquivo({
     projetoId,
-    chave: `projetos/${projetoId}/protocolos/${versao ? `v${versao}` : `rascunho-${carimbo()}`}.pdf`,
-    nomeOriginal: `protocolo_${versao ? `v${versao}` : 'rascunho'}.pdf`,
-    mimeType: 'application/pdf',
-    dados: pdf,
+    chave: `projetos/${projetoId}/protocolos/${nome}${formato === 'docx' ? `-${carimbo()}` : ''}.${doc.ext}`,
+    nomeOriginal: `protocolo_${versao ? `v${versao}` : 'rascunho'}.${doc.ext}`,
+    mimeType: doc.mime,
+    dados: doc.dados,
     criadoPor: t.payload.usuarioId ?? null,
   });
-  if (v) await db('protocoloVersao').where({ id: v.id }).update({ pdfArquivoId: arquivoId });
+  // o PDF da versão fica guardado na versão (RF13); o Word é só para baixar
+  if (v && formato === 'pdf') await db('protocoloVersao').where({ id: v.id }).update({ pdfArquivoId: arquivoId });
   await salvarResultado(t, { arquivoId });
   return { arquivoId };
 };
@@ -253,10 +265,8 @@ const exportarAnalise: Handler = async (t) => {
   let dados: Buffer;
   let ext: string;
   let mime: string;
-  if (formato === 'pdf') {
-    dados = await htmlParaPdf(documentoHtml(await corpoAnalise(analise)), `Análise: ${esc(analise.nome)}`);
-    ext = 'pdf';
-    mime = 'application/pdf';
+  if (formato === 'pdf' || formato === 'docx') {
+    ({ dados, ext, mime } = await gerarDocumento(documentoHtml(await corpoAnalise(analise)), `Análise: ${esc(analise.nome)}`, formato));
   } else {
     const wb = await novaPlanilha();
     abasAnalise(wb, '', await linhasAnalise(analiseId));
@@ -295,8 +305,8 @@ const relatorioRevisao: Handler = async (t) => {
   const r = await consultaRevisao().where('r.id', revisaoId).first();
   const pr = await db('protocolo').where({ projetoId }).first('id');
   const p = await protocoloCompleto(pr.id);
-  const dados = await htmlParaPdf(documentoHtml(await corpoRevisao(r, AVULSO, p)), `Relatório da revisão · ${esc(r.titulo).slice(0, 60)}`);
-  const arquivoId = await salvarArquivo({ projetoId, chave: `projetos/${projetoId}/relatorios/revisao-${revisaoId}-${carimbo()}.pdf`, nomeOriginal: 'relatorio_revisao.pdf', mimeType: 'application/pdf', dados, criadoPor: t.payload.usuarioId });
+  const doc = await gerarDocumento(documentoHtml(await corpoRevisao(r, AVULSO, p)), `Relatório da revisão · ${esc(r.titulo).slice(0, 60)}`, t.payload.formato === 'docx' ? 'docx' : 'pdf');
+  const arquivoId = await salvarArquivo({ projetoId, chave: `projetos/${projetoId}/relatorios/revisao-${revisaoId}-${carimbo()}.${doc.ext}`, nomeOriginal: `relatorio_revisao.${doc.ext}`, mimeType: doc.mime, dados: doc.dados, criadoPor: t.payload.usuarioId });
   await salvarResultado(t, { arquivoId });
 };
 
@@ -317,8 +327,12 @@ const gerarPdfProjeto: Handler = async (t) => {
   partes.push(`<h1 class="quebra">Análises</h1>${analises.length ? '' : '<p class="vazio">Nenhuma análise cadastrada</p>'}`);
   for (const [i, a] of analises.entries()) partes.push(`<div${i ? ' class="quebra"' : ''}>${await corpoAnalise(a, { ...sub, prefixo: `A${i + 1}. ` })}</div>`);
   const rascunho = d.status === 'RASCUNHO' || d.status === 'DEVOLVIDO';
-  const pdf = await htmlParaPdf(documentoHtml((rascunho ? '<div class="marca">RASCUNHO</div>' : '') + partes.join('\n')),`Projeto · ${esc(d.projeto.titulo).slice(0, 60)}`);
-  const arquivoId = await salvarArquivo({ projetoId, chave: `projetos/${projetoId}/exportacoes/projeto-${carimbo()}.pdf`, nomeOriginal: 'projeto.pdf', mimeType: 'application/pdf', dados: pdf, criadoPor: t.payload.usuarioId ?? null });
+  const doc = await gerarDocumento(
+    documentoHtml((rascunho ? '<div class="marca">RASCUNHO</div>' : '') + partes.join('\n')),
+    `Projeto · ${esc(d.projeto.titulo).slice(0, 60)}`,
+    t.payload.formato === 'docx' ? 'docx' : 'pdf',
+  );
+  const arquivoId = await salvarArquivo({ projetoId, chave: `projetos/${projetoId}/exportacoes/projeto-${carimbo()}.${doc.ext}`, nomeOriginal: `projeto.${doc.ext}`, mimeType: doc.mime, dados: doc.dados, criadoPor: t.payload.usuarioId ?? null });
   await salvarResultado(t, { arquivoId });
   return { arquivoId };
 };

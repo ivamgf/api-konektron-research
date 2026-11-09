@@ -19,13 +19,18 @@ function caminhoChrome() {
   throw new Error('Chrome não encontrado: defina CHROME_PATH ou instale o buildpack Chrome for Testing');
 }
 
-export async function htmlParaPdf(html: string, rodape: string) {
+/** Chrome sem interface (PDF e conversão de diagramas para o Word) */
+export async function abrirNavegador() {
   const puppeteer = (await import('puppeteer-core')).default;
-  const browser = await puppeteer.launch({
+  return puppeteer.launch({
     executablePath: caminhoChrome(),
     headless: true,
     args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
   });
+}
+
+export async function htmlParaPdf(html: string, rodape: string) {
+  const browser = await abrirNavegador();
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'load', timeout: 20_000 });
