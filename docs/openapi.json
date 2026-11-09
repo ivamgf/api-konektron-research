@@ -7873,7 +7873,7 @@
                   "passoAtual": {
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 8
+                    "maximum": 10
                   },
                   "tema": {
                     "anyOf": [
@@ -7920,6 +7920,97 @@
                     ]
                   },
                   "justificativa": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 65000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "metodologiaTipo": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "DSR",
+                          "QUANTITATIVA",
+                          "QUALITATIVA",
+                          "MISTA",
+                          "REVISAO_SISTEMATICA",
+                          "REVISAO_INTEGRATIVA",
+                          "REVISAO_ESCOPO",
+                          "REVISAO_NARRATIVA",
+                          "BIBLIOMETRIA",
+                          "ESTUDO_CASO",
+                          "PESQUISA_ACAO",
+                          "EXPERIMENTAL",
+                          "QUASE_EXPERIMENTAL",
+                          "SURVEY",
+                          "ETNOGRAFIA",
+                          "TEORIA_FUNDAMENTADA",
+                          "FENOMENOLOGIA",
+                          "DOCUMENTAL",
+                          "BIBLIOGRAFICA",
+                          "EXPLORATORIA",
+                          "DESCRITIVA",
+                          "EXPLICATIVA",
+                          "DELPHI",
+                          "OUTRA"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "metodologiaOutro": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "metodologia": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 65000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "riscos": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 65000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "beneficios": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 65000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resultadosEsperados": {
                     "anyOf": [
                       {
                         "type": "string",
@@ -8285,6 +8376,162 @@
             "$ref": "#/components/responses/Erro"
           },
           "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        }
+      }
+    },
+    "/projetos/{id}/protocolo/tcle": {
+      "get": {
+        "tags": [
+          "Protocolo"
+        ],
+        "operationId": "getProjetosByidProtocoloTcle",
+        "description": "Requer ser membro do projeto (qualquer papel).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Protocolo"
+        ],
+        "operationId": "postProjetosByidProtocoloTcle",
+        "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "arquivo": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                },
+                "required": [
+                  "arquivo"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Criado"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        },
+        "x-papeis": [
+          "RESPONSAVEL",
+          "COLABORADOR"
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Protocolo"
+        ],
+        "operationId": "deleteProjetosByidProtocoloTcle",
+        "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Sem conteúdo"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro"
+          }
+        },
+        "x-papeis": [
+          "RESPONSAVEL",
+          "COLABORADOR"
+        ]
+      }
+    },
+    "/projetos/{id}/protocolo/tcle/modelo": {
+      "get": {
+        "tags": [
+          "Protocolo"
+        ],
+        "operationId": "getProjetosByidProtocoloTcleModelo",
+        "description": "Requer ser membro do projeto (qualquer papel).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
             "$ref": "#/components/responses/Erro"
           }
         }
@@ -9748,6 +9995,29 @@
                   "tipoRevisaoId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "registroUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "format": "uri"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "registroIdentificador": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 }
               }
@@ -10164,6 +10434,52 @@
         ]
       }
     },
+    "/revisoes/{id}/diagrama": {
+      "get": {
+        "tags": [
+          "Revisões"
+        ],
+        "operationId": "getRevisoesByidDiagrama",
+        "description": "Requer ser membro do projeto (qualquer papel).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          },
+          {
+            "name": "formato",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "svg",
+                "json"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        }
+      }
+    },
     "/revisoes/{id}/documentos": {
       "get": {
         "tags": [
@@ -10378,6 +10694,69 @@
             "$ref": "#/components/responses/Erro"
           },
           "404": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        },
+        "x-papeis": [
+          "RESPONSAVEL",
+          "COLABORADOR"
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Documentos"
+        ],
+        "operationId": "deleteRevisoesByidDocumentosByrdId",
+        "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          },
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "rdId"
+          },
+          {
+            "name": "apagarDocumento",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "409": {
             "$ref": "#/components/responses/Erro"
           },
           "422": {

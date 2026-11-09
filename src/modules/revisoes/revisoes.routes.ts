@@ -14,6 +14,7 @@ import { enfileirar } from '#services/fila.ts';
 import { eSistematico } from '#modules/tipos-revisao/tiposRevisao.service.ts';
 import { contagensEtapa, copiarChecklist, elegiveis, instanciarEtapas, painel, recalcularSituacao, reconsolidarRevisao, resolverAguardando } from './revisoes.service.ts';
 import { fluxogramaSvg } from './fluxograma.ts';
+import { dadosDiagrama, diagramaSvg } from './diagrama.ts';
 import { importarCsvDaEtapa } from './importarEtapa.ts';
 import { detectarDuplicados } from '#modules/documentos/duplicados.ts';
 
@@ -115,6 +116,9 @@ revisoes.patch(
       doisRevisores: z.boolean().optional(),
       diretrizRelatoId: z.guid().nullable().optional(),
       tipoRevisaoId: z.guid().optional(),
+      // onde a revisão foi registrada (PROSPERO, OSF, Open Science Framework...)
+      registroUrl: z.url({ protocol: /^https?$/ }).max(1000).nullable().optional(),
+      registroIdentificador: z.string().trim().max(120).nullable().optional(),
     }),
   }),
   async (req, res) => {
@@ -419,6 +423,37 @@ revisoes.post(
   },
 );
 
+// Remove da revisão um documento de revisão anterior, integrado ou manual; com apagarDocumento=true,
+// apaga também o documento do projeto quando ele não está em outra revisão nem em análises
+revisoes.delete(
+  '/:id/documentos/:rdId',
+  requirePapel(...EDITA),
+  validate({ query: z.object({ apagarDocumento: z.enum(['true', 'false']).optional() }) }),
+  async (req, res) => {
+    const revisaoId = String(req.params.id);
+    const rdId = String(req.params.rdId);
+    const resultado = await db.transaction(async (trx) => {
+      const rd = await trx('revisaoDocumento').where({ id: rdId, revisaoId }).first();
+      if (!rd) throw AppError.notFound('Documento da revisão');
+      if (rd.origem === 'BUSCA') throw AppError.conflict('Documentos de busca saem da revisão pela triagem (exclusão com motivo, RN10)');
+      await trx('revisaoDocumento').where({ id: rdId }).del();
+      let documentoApagado = false;
+      if (req.validated.query.apagarDocumento === 'true') {
+        const emUso =
+          (await trx('revisaoDocumento').where({ documentoId: rd.documentoId }).first('id')) ||
+          (await trx('analiseDocumento').where({ documentoId: rd.documentoId }).first('id'));
+        if (!emUso) {
+          await trx('documento').where({ id: rd.documentoId, projetoId: req.projeto!.id }).del();
+          documentoApagado = true;
+        }
+      }
+      await auditar({ req, entidade: 'revisao_documento', entidadeId: rdId, acao: 'EXCLUIR', antes: rd, depois: { documentoApagado } }, trx);
+      return { documentoApagado };
+    });
+    res.json(resultado);
+  },
+);
+
 revisoes.patch(
   '/:id/documentos/:rdId',
   requirePapel(...EDITA),
@@ -455,6 +490,14 @@ revisoes.get('/:id/fluxograma', validate({ query: z.object({ formato: z.enum(['s
   const p = await painel(String(req.params.id));
   if (req.validated.query.formato === 'json') return res.json(p.totais);
   res.type('image/svg+xml').send(fluxogramaSvg(p));
+});
+
+// Diagrama de fluxo da seleção em três colunas (revisões anteriores, bases, outras fontes), com os dados atuais
+revisoes.get('/:id/diagrama', validate({ query: z.object({ formato: z.enum(['svg', 'json']).optional() }) }), async (req, res) => {
+  const d = await dadosDiagrama(String(req.params.id));
+  if (req.validated.query.formato === 'json') return res.json(d);
+  const r = await db('revisao').where({ id: String(req.params.id) }).first('titulo');
+  res.type('image/svg+xml').send(diagramaSvg(d, r?.titulo ? `Fluxo da seleção · ${r.titulo}`.slice(0, 120) : undefined));
 });
 
 revisoes.get('/:id/checklist', async (req, res) => {

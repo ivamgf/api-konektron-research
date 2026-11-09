@@ -228,6 +228,13 @@ CREATE TABLE protocolo (
   hipotese          TEXT,
   objetivo_geral    TEXT,
   justificativa     TEXT,
+  metodologia_tipo  VARCHAR(40)  COMMENT 'DSR, QUANTITATIVA, QUALITATIVA, MISTA...',
+  metodologia_outro VARCHAR(200) COMMENT 'nome do tipo quando OUTRA',
+  metodologia       TEXT         COMMENT 'descrição da abordagem e dos procedimentos',
+  riscos            TEXT         COMMENT 'opcional',
+  beneficios        TEXT         COMMENT 'opcional',
+  resultados_esperados TEXT,
+  tcle_arquivo_id   CHAR(36)     COMMENT 'TCLE preenchido (opcional)',
   concluido_em      DATETIME(3),
   aprovado_por      CHAR(36),
   aprovado_em       DATETIME(3),
@@ -237,7 +244,8 @@ CREATE TABLE protocolo (
   PRIMARY KEY (id),
   UNIQUE KEY uq_protocolo_projeto (projeto_id),
   CONSTRAINT fk_protocolo_projeto FOREIGN KEY (projeto_id) REFERENCES projeto(id) ON DELETE CASCADE,
-  CONSTRAINT fk_protocolo_aprovado_por FOREIGN KEY (aprovado_por) REFERENCES usuario(id) ON DELETE SET NULL
+  CONSTRAINT fk_protocolo_aprovado_por FOREIGN KEY (aprovado_por) REFERENCES usuario(id) ON DELETE SET NULL,
+  CONSTRAINT fk_protocolo_tcle FOREIGN KEY (tcle_arquivo_id) REFERENCES arquivo(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC
   COMMENT='Protocolo principal da pesquisa — aba Definições (RF07–RF15).';
 
@@ -434,6 +442,8 @@ CREATE TABLE revisao (
   status               ENUM('PLANEJADA','EM_ANDAMENTO','CONCLUIDA','CANCELADA') NOT NULL DEFAULT 'PLANEJADA',
   dois_revisores       TINYINT(1)   NOT NULL DEFAULT 0,
   etapa_atual_id       CHAR(36)     COMMENT 'FK adicionada na seção 2',
+  registro_url         VARCHAR(1000) COMMENT 'onde a revisão foi registrada (PROSPERO, OSF...)',
+  registro_identificador VARCHAR(120),
   criado_por           CHAR(36)     NOT NULL,
   criado_em            DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   atualizado_em        DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),

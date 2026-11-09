@@ -1,4 +1,5 @@
 import { esc, ESTILO, paragrafos } from './render.ts';
+import { nomeMetodologia } from '#modules/protocolo/tcle.ts';
 
 const lista = (itens: string[]) => (itens.length ? `<ol>${itens.map((i) => `<li>${esc(i)}</li>`).join('')}</ol>` : '<p class="vazio">Não informado</p>');
 const dataBr = (d: unknown) => (d ? new Date(d as string).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—');
@@ -55,7 +56,11 @@ ${mostra('definicoes') ? `<h2>2. Definições</h2>
 <h3>Hipótese</h3>${paragrafos(p.hipotese)}
 <h3>Objetivo geral</h3>${paragrafos(p.objetivoGeral)}
 <h3>Objetivos específicos</h3>${lista((p.objetivos ?? []).map((x: any) => x.texto))}
-<h3>Justificativa</h3>${paragrafos(p.justificativa)}` : ''}
+<h3>Justificativa</h3>${paragrafos(p.justificativa)}
+<h3>Metodologia</h3><p><b>${esc(nomeMetodologia(p) ?? 'Não informada')}</b></p>${p.metodologia ? paragrafos(p.metodologia) : ''}
+${p.riscos ? `<h3>Riscos</h3>${paragrafos(p.riscos)}` : ''}
+${p.beneficios ? `<h3>Benefícios</h3>${paragrafos(p.beneficios)}` : ''}
+<h3>Principais resultados esperados</h3>${paragrafos(p.resultadosEsperados)}` : ''}
 ${mostra('estrategia') ? `<h2>3. Estratégia de busca</h2>
 <h3>Palavras-chave</h3><p>${(p.palavrasChave ?? []).map((x: any) => `${esc(x.termo)}${x.idiomaCodigo ? ` <small>(${esc(x.idiomaCodigo)})</small>` : ''}`).join('; ') || '<span class="vazio">Não informado</span>'}</p>
 <h3>Descritores</h3><table><tr><th>Termo</th><th>Vocabulário</th><th>Código</th></tr>${(p.descritores ?? []).map((d: any) => `<tr><td>${esc(d.termo)}</td><td>${esc(d.vocabulario)}</td><td class="mono">${esc(d.codigo ?? '')}</td></tr>`).join('') || '<tr><td colspan="3" class="vazio">Não informado</td></tr>'}</table>

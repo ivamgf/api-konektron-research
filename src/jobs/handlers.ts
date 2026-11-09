@@ -10,7 +10,7 @@ import { htmlParaPdf, esc, ESTILO } from '#pdf/render.ts';
 import { capa, htmlProtocolo, secoesProtocolo, type DadosProtocolo } from '#pdf/protocolo.ts';
 import { protocoloCompleto } from '#modules/protocolo/protocolo.service.ts';
 import { painel } from '#modules/revisoes/revisoes.service.ts';
-import { fluxogramaSvg } from '#modules/revisoes/fluxograma.ts';
+import { dadosDiagrama, diagramaSvg } from '#modules/revisoes/diagrama.ts';
 import { detectarDuplicados } from '#modules/documentos/duplicados.ts';
 import { lerArquivoDeBusca } from './parsers.ts';
 import type { Tarefa } from '#services/fila.ts';
@@ -279,11 +279,11 @@ async function corpoRevisao(r: any, n: Niveis = AVULSO, p?: any) {
   const pn = await painel(r.id);
   const incluidos = await db('revisaoDocumento as rd').join('documento as d', 'd.id', 'rd.documentoId').where({ 'rd.revisaoId': r.id, 'rd.situacao': 'INCLUIDO' }).orderBy('d.titulo').select('d.refNbr', 'd.titulo');
   const checklist = await db('revisaoChecklistItem').where({ revisaoId: r.id }).orderBy('ordem');
-  return `<${T}>${n.prefixo ?? ''}${esc(r.titulo)}</${T}><p>Tipo: ${esc(r.tipoNome)} · Diretriz: ${esc(r.diretrizSigla ?? 'nenhuma')} ${esc(r.diretrizVersao ?? '')}</p>
+  return `<${T}>${n.prefixo ?? ''}${esc(r.titulo)}</${T}><p>Tipo: ${esc(r.tipoNome)} · Diretriz: ${esc(r.diretrizSigla ?? 'nenhuma')} ${esc(r.diretrizVersao ?? '')}</p>${r.registroUrl ? `<p>Registro da revisão: ${r.registroIdentificador ? `${esc(r.registroIdentificador)} — ` : ''}<a href="${esc(r.registroUrl)}">${esc(r.registroUrl)}</a></p>` : ''}
 ${p ? `<${S}>Protocolo resumido</${S}><p><b>Questão:</b> ${esc(p.questaoPesquisa)}</p><p><b>Objetivo:</b> ${esc(p.objetivoGeral)}</p>
 <p><b>Palavras-chave:</b> ${esc(p.palavrasChave.map((x: any) => x.termo).join('; '))}</p>` : ''}
 <${S}>Painel de etapas</${S}><table><tr><th>Etapa</th><th>Base</th><th>Selecionados</th><th>Excluídos</th></tr>${pn.porEtapa.map((e: any) => `<tr><td>${esc(e.etapaNome)}</td><td>${esc(e.base)}</td><td>${e.selecionados}</td><td>${e.excluidos}</td></tr>`).join('') || '<tr><td colspan="4" class="vazio">Sem etapas</td></tr>'}</table>
-<${S}>Fluxo de seleção</${S}>${fluxogramaSvg(pn)}
+<${S}>Fluxo de seleção</${S}><div class="diagrama">${diagramaSvg(await dadosDiagrama(r.id)).replace("<svg ", "<svg style=\"max-width:100%;height:auto\" ")}</div>
 <${S}>Incluídos (${incluidos.length})</${S}>${incluidos.length ? `<ol>${incluidos.map((d: any) => `<li>${esc(d.refNbr ?? d.titulo)}</li>`).join('')}</ol>` : '<p class="vazio">Nenhum documento incluído</p>'}
 <${S}>Checklist de relato</${S}><table><tr><th>Cód.</th><th>Item</th><th>Situação</th><th>Local</th></tr>${checklist.map((c: any) => `<tr><td>${esc(c.codigo)}</td><td>${esc(c.descricao)}</td><td>${esc(c.situacao)}</td><td>${esc(c.localRelato ?? '')}</td></tr>`).join('') || '<tr><td colspan="4" class="vazio">Sem checklist</td></tr>'}</table>`;
 }
