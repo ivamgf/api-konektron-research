@@ -1,8 +1,8 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import jwt from 'jsonwebtoken';
 import { env } from '#config/env.ts';
 import type { StorageProvider } from './index.ts';
+import { lerTokenDeDownload, urlDeDownload } from './assinatura.ts';
 
 // Disco local: só para desenvolvimento (no Heroku o disco do dyno é efêmero)
 export class LocalStorageProvider implements StorageProvider {
@@ -31,11 +31,10 @@ export class LocalStorageProvider implements StorageProvider {
 
   // Rota da API com token de 15 min (GET /arquivos/download?token=...)
   async urlAssinada(chave: string, minutos = 15, nomeArquivo?: string) {
-    const token = jwt.sign({ k: chave, n: nomeArquivo }, env.JWT_SECRET, { expiresIn: `${minutos}m` });
-    return `${env.API_URL}/api/v1/arquivos/download?token=${encodeURIComponent(token)}`;
+    return urlDeDownload(chave, minutos, nomeArquivo);
   }
 
   static lerToken(token: string) {
-    return jwt.verify(token, env.JWT_SECRET) as { k: string; n?: string };
+    return lerTokenDeDownload(token);
   }
 }

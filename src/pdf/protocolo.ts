@@ -1,4 +1,5 @@
 import { esc, ESTILO, paragrafos } from './render.ts';
+import { nomeMetodologia } from '#modules/protocolo/tcle.ts';
 
 const lista = (itens: string[]) => (itens.length ? `<ol>${itens.map((i) => `<li>${esc(i)}</li>`).join('')}</ol>` : '<p class="vazio">Não informado</p>');
 const dataBr = (d: unknown) => (d ? new Date(d as string).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—');
@@ -12,6 +13,8 @@ export type DadosProtocolo = {
   revisoes: any[];
   versoes: any[];
   secoes?: string[] | null;
+  /** referências do projeto (ABNT e APA) */
+  referencias?: { abnt: string | null; apa: string | null }[];
 };
 
 export const autoresDaEquipe = (equipe: any[]) => equipe.filter((m) => m.papel !== 'LEITOR').map((m) => m.nome).join(', ');
@@ -55,7 +58,11 @@ ${mostra('definicoes') ? `<h2>2. Definições</h2>
 <h3>Hipótese</h3>${paragrafos(p.hipotese)}
 <h3>Objetivo geral</h3>${paragrafos(p.objetivoGeral)}
 <h3>Objetivos específicos</h3>${lista((p.objetivos ?? []).map((x: any) => x.texto))}
-<h3>Justificativa</h3>${paragrafos(p.justificativa)}` : ''}
+<h3>Justificativa</h3>${paragrafos(p.justificativa)}
+<h3>Metodologia</h3><p><b>${esc(nomeMetodologia(p) ?? 'Não informada')}</b></p>${p.metodologia ? paragrafos(p.metodologia) : ''}
+${p.riscos ? `<h3>Riscos</h3>${paragrafos(p.riscos)}` : ''}
+${p.beneficios ? `<h3>Benefícios</h3>${paragrafos(p.beneficios)}` : ''}
+<h3>Principais resultados esperados</h3>${paragrafos(p.resultadosEsperados)}` : ''}
 ${mostra('estrategia') ? `<h2>3. Estratégia de busca</h2>
 <h3>Palavras-chave</h3><p>${(p.palavrasChave ?? []).map((x: any) => `${esc(x.termo)}${x.idiomaCodigo ? ` <small>(${esc(x.idiomaCodigo)})</small>` : ''}`).join('; ') || '<span class="vazio">Não informado</span>'}</p>
 <h3>Descritores</h3><table><tr><th>Termo</th><th>Vocabulário</th><th>Código</th></tr>${(p.descritores ?? []).map((d: any) => `<tr><td>${esc(d.termo)}</td><td>${esc(d.vocabulario)}</td><td class="mono">${esc(d.codigo ?? '')}</td></tr>`).join('') || '<tr><td colspan="3" class="vazio">Não informado</td></tr>'}</table>
@@ -65,5 +72,17 @@ ${mostra('criterios') ? `<h2>5. Critérios de inclusão e exclusão</h2>
 ${['INCLUSAO', 'EXCLUSAO'].map((t) => `<h3>${t === 'INCLUSAO' ? 'Inclusão' : 'Exclusão'}</h3><table><tr><th>Critério</th><th>Descrição</th></tr>${(p.criterios ?? []).filter((c: any) => c.tipo === t).map((c: any) => `<tr><td>${esc(c.nome)}</td><td>${esc(c.descricao ?? '')}</td></tr>`).join('') || '<tr><td colspan="2" class="vazio">Nenhum</td></tr>'}</table>`).join('')}` : ''}
 ${mostra('revisoes') ? `<h2>6. Revisões previstas</h2>${revisoes.length ? revisoes.map((r) => `<h3>${esc(r.titulo)}</h3><p>Tipo: ${esc(r.tipoNome)} · Diretriz de relato: ${r.diretrizSigla ? `${esc(r.diretrizSigla)} ${esc(r.diretrizVersao ?? '')} — ${esc(r.diretrizUrl ?? '')}` : 'nenhuma'}</p>${lista(r.etapas.map((e: any) => e.nome))}`).join('') : '<p class="vazio">Nenhuma revisão cadastrada</p>'}` : ''}
 ${mostra('historico') ? `<h2>7. Histórico de versões e aprovação</h2><table><tr><th>Versão</th><th>Data</th><th>Autor</th><th>Justificativa</th></tr>${versoes.map((v) => `<tr><td>${v.versao}</td><td>${dataBr(v.criadoEm)}</td><td>${esc(v.criadoPorNome ?? '')}</td><td>${esc(v.justificativa ?? '—')}</td></tr>`).join('') || '<tr><td colspan="4" class="vazio">Sem versões concluídas</td></tr>'}</table>
-${p.aprovadoEm ? `<p>Aprovado por ${esc(p.aprovadoPorNome ?? 'orientador(a)')} em ${dataBr(p.aprovadoEm)}.</p>` : ''}${p.parecer ? `<h3>Parecer</h3>${paragrafos(p.parecer)}` : ''}` : ''}`;
+${p.aprovadoEm ? `<p>Aprovado por ${esc(p.aprovadoPorNome ?? 'orientador(a)')} em ${dataBr(p.aprovadoEm)}.</p>` : ''}${p.parecer ? `<h3>Parecer</h3>${paragrafos(p.parecer)}` : ''}` : ''}
+${mostra('referencias') ? secaoReferencias(o.referencias ?? []) : ''}`;
+}
+
+/** 8. Referências: lista em ABNT (NBR 6023) e, quando houver, em APA (7ª ed.) */
+function secaoReferencias(refs: { abnt: string | null; apa: string | null }[]) {
+  if (!refs.length) return '';
+  const abnt = refs.map((r) => r.abnt).filter((x): x is string => !!x?.trim());
+  const apa = refs.map((r) => r.apa).filter((x): x is string => !!x?.trim()).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const bloco = (itens: string[]) => itens.map((t) => `<p class="ref">${esc(t)}</p>`).join('');
+  return `<h2>8. Referências</h2>
+${abnt.length ? `<h3>ABNT (NBR 6023)</h3>${bloco(abnt)}` : ''}
+${apa.length ? `<h3>APA (7ª edição)</h3>${bloco(apa)}` : ''}`;
 }

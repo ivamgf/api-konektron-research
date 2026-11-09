@@ -140,9 +140,9 @@ apoio.get('/tarefas/:id', validate({ params: z.object({ id: z.coerce.number().in
   });
 });
 
-// Download do storage local (URL assinada de 15 min, só no driver local) — rota pública em routes.ts
+// Download pela API (URL assinada de 15 min) nos drivers local e FTP — rota pública em routes.ts
 export async function downloadLocal(token: string) {
-  if (env.STORAGE_DRIVER !== 'local') throw AppError.notFound('Arquivo');
+  if (env.STORAGE_DRIVER === 'gcs') throw AppError.notFound('Arquivo');
   let p: { k: string; n?: string };
   try {
     p = LocalStorageProvider.lerToken(token);

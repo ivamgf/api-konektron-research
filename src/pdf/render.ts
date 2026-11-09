@@ -73,6 +73,7 @@ export const ESTILO = `
   .capa p { color: #E6FAF3; margin: 4px 0; }
   .marca { position: fixed; top: 40%; left: 10%; font-size: 72pt; color: rgba(220,53,69,0.12); transform: rotate(-30deg); }
   .quebra { page-break-before: always; }
+  p.ref { text-align: left; margin: 0 0 10px; line-height: 1.15; }
   .vazio { color: #8a9396; font-style: italic; }
   .mono { font-family: 'Roboto Mono', monospace; font-size: 9.5pt; }
 `;

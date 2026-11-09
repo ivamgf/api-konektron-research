@@ -36,6 +36,8 @@ export function pendencias(p: Awaited<ReturnType<typeof protocoloCompleto>>) {
   if (!p.criterios.some((c: any) => c.tipo === 'INCLUSAO')) {
     faltas.push({ campo: 'criterios', passo: 8, mensagem: 'Cadastre ao menos 1 critério de inclusão' });
   }
+  if (p.metodologiaTipo === 'OUTRA' && vazio(p.metodologiaOutro)) faltas.push({ campo: 'metodologiaOutro', passo: 9, mensagem: 'Informe qual é a metodologia' });
+  if (vazio(p.resultadosEsperados)) faltas.push({ campo: 'resultadosEsperados', passo: 10, mensagem: 'Informe os principais resultados esperados' });
   return faltas;
 }
 
@@ -49,7 +51,7 @@ export async function marcarAlterado(trx: Trx, protocoloId: string) {
 
 // Diferença campo a campo entre duas versões (RF14)
 export function compararSnapshots(a: Record<string, any>, b: Record<string, any>) {
-  const ignorar = new Set(['id', 'protocoloId', 'criadoEm', 'atualizadoEm', 'status', 'versaoAtual', 'concluidoEm', 'aprovadoEm', 'aprovadoPor', 'parecer']);
+  const ignorar = new Set(['id', 'protocoloId', 'criadoEm', 'atualizadoEm', 'status', 'versaoAtual', 'concluidoEm', 'aprovadoEm', 'aprovadoPor', 'parecer', 'tcleArquivoId']);
   const chaves = new Set([...Object.keys(a), ...Object.keys(b)]);
   const diferencas: { campo: string; antes: unknown; depois: unknown }[] = [];
   for (const k of chaves) {

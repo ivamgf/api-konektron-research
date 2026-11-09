@@ -1,4 +1,5 @@
 import { Router, type Request } from 'express';
+import multer from 'multer';
 import { z } from 'zod';
 import { db, json } from '#database/connection.ts';
 import { validate } from '#middlewares/validate.ts';
@@ -10,7 +11,9 @@ import { longText, optText } from '#shared/schemas.ts';
 import { auditar } from '#services/audit.ts';
 import { enfileirar } from '#services/fila.ts';
 import { membrosDoProjeto, notificar } from '#services/notificacoes.ts';
+import { salvarArquivo, urlDoArquivo } from '#services/arquivos.ts';
 import { compararSnapshots, marcarAlterado, pendencias, protocoloCompleto, protocoloDoProjeto } from './protocolo.service.ts';
+import { CODIGOS_METODOLOGIA, modeloTcle } from './tcle.ts';
 
 // Montado em /projetos/:id (projectAccess já aplicado no roteador pai)
 const router = Router({ mergeParams: true });
@@ -31,12 +34,19 @@ router.get('/protocolo', async (req, res) => {
 // RF07/RF08: salva o passo do assistente (rascunho). Listas enviadas substituem as atuais.
 const item = z.object({ texto: z.string().trim().min(1).max(5000) });
 const passoSchema = z.object({
-  passoAtual: z.number().int().min(1).max(8).optional(),
+  passoAtual: z.number().int().min(1).max(10).optional(),
   tema: longText(),
   questaoPesquisa: longText(),
   hipotese: longText(),
   objetivoGeral: longText(),
   justificativa: longText(),
+  // passo 9: metodologia; passo 10: riscos e benefícios (opcionais) e resultados esperados
+  metodologiaTipo: z.enum(CODIGOS_METODOLOGIA).nullable().optional(),
+  metodologiaOutro: optText(200),
+  metodologia: longText(),
+  riscos: longText(),
+  beneficios: longText(),
+  resultadosEsperados: longText(),
   outrasQuestoes: z.array(item).max(50).optional(),
   objetivos: z.array(item).max(50).optional(),
   palavrasChave: z
@@ -130,7 +140,7 @@ router.post(
   validate({
     body: z.object({
       versao: z.number().int().positive().optional(),
-      secoes: z.array(z.enum(['identificacao', 'definicoes', 'estrategia', 'questoes', 'criterios', 'revisoes', 'historico'])).optional(),
+      secoes: z.array(z.enum(['identificacao', 'definicoes', 'estrategia', 'questoes', 'criterios', 'revisoes', 'historico', 'referencias'])).optional(),
     }),
   }),
   async (req, res) => {
@@ -142,6 +152,65 @@ router.post(
     res.status(202).json({ tarefaId, status: 'PENDENTE', acompanhar: `/api/v1/tarefas/${tarefaId}` });
   },
 );
+
+// ---------------------------------------------------------------- TCLE (opcional)
+
+// Modelo do TCLE para baixar e preencher (.doc que abre editável no Word/LibreOffice), já com os dados do protocolo
+router.get('/protocolo/tcle/modelo', async (req, res) => {
+  const p = await protocoloDoProjeto(req.projeto!.id);
+  const equipe = await db('projetoMembro as pm')
+    .join('usuario as u', 'u.id', 'pm.usuarioId')
+    .where('pm.projetoId', req.projeto!.id)
+    .whereNotNull('pm.aceitoEm')
+    .orderByRaw("FIELD(pm.papel, 'RESPONSAVEL', 'ORIENTADOR', 'COLABORADOR', 'LEITOR')")
+    .select('u.nome', 'u.email', 'pm.papel');
+  const html = modeloTcle({ projeto: req.projeto!, equipe, protocolo: p });
+  const nome = `TCLE - ${req.projeto!.titulo}`.replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 100).trim();
+  const ascii = nome.normalize('NFD').replace(/[^\x20-\x7e]/g, '') || 'TCLE';
+  res
+    .type('application/msword')
+    .set('Content-Disposition', `attachment; filename="${ascii}.doc"; filename*=UTF-8''${encodeURIComponent(nome)}.doc`)
+    .send('\ufeff' + html);
+});
+
+// TCLE preenchido: PDF, Word ou ODT até 20 MB (substitui o anterior)
+const uploadTcle = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+const EXT_TCLE = ['pdf', 'doc', 'docx', 'odt'];
+
+router.get('/protocolo/tcle', async (req, res) => {
+  const p = await protocoloDoProjeto(req.projeto!.id);
+  if (!p.tcleArquivoId) return res.json(null);
+  const r = await urlDoArquivo(p.tcleArquivoId);
+  res.json(r ? { url: r.url, arquivo: { id: r.arquivo.id, nomeOriginal: r.arquivo.nomeOriginal, mimeType: r.arquivo.mimeType, criadoEm: r.arquivo.criadoEm } } : null);
+});
+
+router.post('/protocolo/tcle', ...edita, uploadTcle.single('arquivo'), async (req, res) => {
+  if (!req.file) throw AppError.unprocessable('Envie o TCLE no campo "arquivo"');
+  const ext = (req.file.originalname.split('.').pop() ?? '').toLowerCase();
+  if (!EXT_TCLE.includes(ext)) throw AppError.unprocessable('Envie o TCLE em PDF, DOC, DOCX ou ODT');
+  const p = await protocoloDoProjeto(req.projeto!.id);
+  const arquivoId = await salvarArquivo({
+    projetoId: req.projeto!.id,
+    chave: `projetos/${req.projeto!.id}/protocolo/tcle-${uuid()}.${ext}`,
+    nomeOriginal: req.file.originalname,
+    mimeType: req.file.mimetype || 'application/octet-stream',
+    dados: req.file.buffer,
+    criadoPor: req.user!.id,
+  });
+  await db('protocolo').where({ id: p.id }).update({ tcleArquivoId: arquivoId });
+  auditar({ req, entidade: 'protocolo', entidadeId: p.id, acao: 'ALTERAR', depois: { tcle: req.file.originalname } });
+  const r = await urlDoArquivo(arquivoId);
+  res.status(201).json({ url: r?.url, arquivo: { id: arquivoId, nomeOriginal: req.file.originalname, mimeType: req.file.mimetype } });
+});
+
+router.delete('/protocolo/tcle', ...edita, async (req, res) => {
+  const p = await protocoloDoProjeto(req.projeto!.id);
+  if (p.tcleArquivoId) {
+    await db('protocolo').where({ id: p.id }).update({ tcleArquivoId: null });
+    auditar({ req, entidade: 'protocolo', entidadeId: p.id, acao: 'ALTERAR', depois: { tcle: null } });
+  }
+  res.status(204).end();
+});
 
 // RF14: histórico e comparação de versões
 router.get('/protocolo/versoes', async (req, res) => {
