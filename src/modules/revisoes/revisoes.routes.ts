@@ -538,6 +538,12 @@ revisoes.patch('/:id/checklist/:itemId', requirePapel(...EDITA), validate({ body
   res.json(await db('revisaoChecklistItem').where({ id: String(req.params.itemId) }).first());
 });
 
+// Completa na web resumos e palavras-chave em branco dos documentos da revisão (no worker)
+revisoes.post('/:id/completar-metadados', requirePapel(...EDITA), async (req, res) => {
+  const tarefaId = await enfileirar('completar-metadados', { revisaoId: String(req.params.id), projetoId: req.projeto!.id, usuarioId: req.user!.id });
+  res.status(202).json({ tarefaId, acompanhar: `/api/v1/tarefas/${tarefaId}` });
+});
+
 // RF43: relatório da revisão em PDF ou Word (gerado no worker)
 revisoes.post('/:id/relatorio', validate({ body: z.object({ formato: z.enum(['pdf', 'docx']).optional() }).optional() }), async (req, res) => {
   const formato = req.validated.body?.formato ?? 'pdf';

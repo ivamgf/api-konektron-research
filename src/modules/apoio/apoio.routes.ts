@@ -12,6 +12,7 @@ import { LocalStorageProvider } from '#services/storage/local.ts';
 import { storage } from '#services/storage/index.ts';
 import { membrosDoProjeto, notificar } from '#services/notificacoes.ts';
 import { enfileirar } from '#services/fila.ts';
+import { auditar } from '#services/audit.ts';
 
 // ------------------------------------------------ /projetos/:id/... (projectAccess no pai)
 export const apoioDoProjeto = Router({ mergeParams: true });
@@ -101,6 +102,28 @@ apoioDoProjeto.get('/busca', validate({ query: z.object({ q: z.string().trim().m
   ]);
   res.json({ documentos, respostas, citacoes });
 });
+
+// Uso de IA (conta do próprio usuário): registra na auditoria qual texto foi gerado, com que
+// provedor e modelo. O conteúdo e a chave de API nunca passam pela API do Konektron.
+apoioDoProjeto.post(
+  '/uso-ia',
+  requirePapel(...EDITA),
+  validate({
+    body: z.object({
+      recurso: z.string().trim().min(1).max(120),
+      modo: z.enum(['API', 'ASSISTENTE']),
+      provedor: z.string().trim().max(40).nullable().optional(),
+      modelo: z.string().trim().max(120).nullable().optional(),
+      entidade: z.string().trim().max(40).nullable().optional(),
+      entidadeId: z.string().trim().max(36).nullable().optional(),
+    }),
+  }),
+  async (req, res) => {
+    const { entidade, entidadeId, ...uso } = req.validated.body;
+    await auditar({ req, entidade: entidade || 'uso_ia', entidadeId: entidadeId ?? null, acao: 'USAR_IA', depois: uso });
+    res.status(204).end();
+  },
+);
 
 // RF42: exportação do projeto (gerada no worker): planilha modelo (xlsx, padrão) ou PDF do projeto
 // inteiro — protocolo, relatórios das revisões e análises

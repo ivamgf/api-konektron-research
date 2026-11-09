@@ -22,6 +22,7 @@ import { painel } from '#modules/revisoes/revisoes.service.ts';
 import { dadosDiagrama, diagramaSvg } from '#modules/revisoes/diagrama.ts';
 import { referenciasDoProjeto } from '#modules/referencias/referencias.routes.ts';
 import { detectarDuplicados } from '#modules/documentos/duplicados.ts';
+import { completarDocumento } from '#modules/documentos/documentos.routes.ts';
 import { lerArquivoDeBusca } from './parsers.ts';
 import type { Tarefa } from '#services/fila.ts';
 
@@ -148,7 +149,7 @@ function aba(wb: any, nome: string, colunas: { header: string; key: string; widt
 
 async function linhasAnalise(analiseId: string) {
   const questoes = await db('analiseQuestao as aq').join('questaoAnalise as q', 'q.id', 'aq.questaoAnaliseId').where('aq.analiseId', analiseId).orderBy('aq.ordem').select('q.id', 'q.codigo', 'q.enunciado');
-  const docs = await db('analiseDocumento as ad').join('documento as d', 'd.id', 'ad.documentoId').where('ad.analiseId', analiseId).orderBy('ad.ordem').select('ad.id', 'ad.ordem', 'ad.progresso', 'ad.consideracoes', 'ad.observacoes', 'd.titulo', 'd.autores', 'd.ano', 'd.refApa');
+  const docs = await db('analiseDocumento as ad').join('documento as d', 'd.id', 'ad.documentoId').where('ad.analiseId', analiseId).orderBy('ad.ordem').select('ad.id', 'ad.ordem', 'ad.progresso', 'ad.resumoAssunto', 'ad.consideracoes', 'ad.observacoes', 'd.titulo', 'd.autores', 'd.ano', 'd.refApa');
   const respostas = await db('resposta').whereIn('analiseDocumentoId', docs.map((d: any) => d.id));
   const matriz = await db('matrizSinteseItem as m').join('analiseDocumento as ad', 'ad.id', 'm.analiseDocumentoId').join('documento as d', 'd.id', 'ad.documentoId').where('ad.analiseId', analiseId).orderBy(['ad.ordem', 'm.ordem']).select('d.titulo', 'm.citacao', 'm.textoOriginal', 'm.textoParafraseado', 'm.pagina');
   const discussao = await db('discussaoItem as x').join('analiseDocumento as ad', 'ad.id', 'x.analiseDocumentoId').join('documento as d', 'd.id', 'ad.documentoId').where('ad.analiseId', analiseId).orderBy(['ad.ordem', 'x.ordem']).select('d.titulo', 'x.pontoPrincipal', 'x.discussao');
@@ -158,6 +159,7 @@ async function linhasAnalise(analiseId: string) {
     autores: d.autores,
     ano: d.ano,
     progresso: d.progresso,
+    resumoAssunto: d.resumoAssunto,
     ...Object.fromEntries(questoes.map((q: any) => [q.codigo, respostas.find((r: any) => r.analiseDocumentoId === d.id && r.questaoAnaliseId === q.id)?.texto ?? ''])),
     consideracoes: d.consideracoes,
     observacoes: d.observacoes,
@@ -172,6 +174,7 @@ function abasAnalise(wb: any, sufixo: string, l: Awaited<ReturnType<typeof linha
     { header: 'Autores', key: 'autores', width: 30 },
     { header: 'Ano', key: 'ano', width: 8 },
     { header: 'Progresso', key: 'progresso', width: 14 },
+    { header: 'Resumo do assunto', key: 'resumoAssunto', width: 60 },
     ...l.questoes.map((q: any) => ({ header: `${q.codigo} – ${q.enunciado}`.slice(0, 120), key: q.codigo, width: 40 })),
     { header: 'Considerações', key: 'consideracoes', width: 40 },
     { header: 'Observações', key: 'observacoes', width: 40 },
@@ -254,6 +257,7 @@ async function corpoAnalise(analise: any, n: Niveis = AVULSO) {
   const { titulo: T, secao: S } = n;
   return `<${T}>${n.prefixo ?? ''}${esc(analise.nome)}</${T}><p>${esc(analise.descricao ?? '')}</p>
 ${l.analise.map((d: any) => `<${S}>${d.ordem}. ${esc(d.titulo)}</${S}><p>${esc(d.autores ?? '')} (${d.ano ?? 's.d.'}) · ${esc(d.progresso)}</p>
+${d.resumoAssunto ? `<${S === 'h2' ? 'h3' : 'h4'}>Resumo do assunto</${S === 'h2' ? 'h3' : 'h4'}><p>${esc(d.resumoAssunto)}</p>` : ''}
 <table>${l.questoes.map((q: any) => `<tr><th style="width:30%">${esc(q.codigo)} – ${esc(q.enunciado)}</th><td>${esc(d[q.codigo] || '—')}</td></tr>`).join('')}</table>
 ${d.consideracoes ? `<${S === 'h2' ? 'h3' : 'h4'}>Considerações</${S === 'h2' ? 'h3' : 'h4'}><p>${esc(d.consideracoes)}</p>` : ''}`).join('') || '<p class="vazio">Nenhum documento na análise</p>'}
 <${S}>Matriz de síntese</${S}><table><tr><th>Documento</th><th>Citação</th><th>Texto parafraseado</th></tr>${l.matriz.map((m: any) => `<tr><td>${esc(m.titulo)}</td><td>${esc(m.citacao ?? '')}</td><td>${esc(m.textoParafraseado ?? '')}</td></tr>`).join('') || '<tr><td colspan="3" class="vazio">Sem citações</td></tr>'}</table>`;
@@ -360,7 +364,41 @@ export async function limparLixeira() {
   return { removidos: projetos.length };
 }
 
+// ------------------------------------------------ completar-metadados
+// Documentos (do projeto ou de uma revisão) com resumo ou palavras-chave em branco e com link, DOI
+// ou título: procura em fontes abertas, um por vez, sem sobrescrever o que já foi preenchido.
+const completarMetadadosDocs: Handler = async (t) => {
+  const { projetoId, revisaoId, usuarioId } = t.payload;
+  const vazio = (c: string) => (w: any) => w.whereNull(c).orWhere(c, '');
+  const q = db('documento as d').where('d.projetoId', projetoId).where((w: any) => w.where(vazio('d.resumo')).orWhere(vazio('d.palavrasChave'))).select('d.id').limit(3000);
+  if (revisaoId) q.whereExists(db('revisaoDocumento as rd').whereRaw('rd.documento_id = d.id').where('rd.revisaoId', revisaoId));
+  const ids: string[] = (await q).map((r: any) => r.id);
+  let completados = 0;
+  let resumos = 0;
+  let palavrasChave = 0;
+  for (let i = 0; i < ids.length; i++) {
+    try {
+      const r = await completarDocumento(ids[i], usuarioId, projetoId);
+      if (r.preenchidos.length) completados++;
+      if (r.preenchidos.includes('resumo')) resumos++;
+      if (r.preenchidos.includes('palavrasChave')) palavrasChave++;
+    } catch (err) {
+      logger.warn({ err, documentoId: ids[i] }, 'completar metadados: documento ignorado');
+    }
+    // tarefa longa: renova a reserva para outro worker não pegá-la de novo
+    if (i % 20 === 19) await db('filaTarefa').where({ id: t.id }).update({ bloqueadoAte: new Date(Date.now() + 10 * 60_000) });
+    await new Promise((r) => setTimeout(r, 200)); // educado com as APIs abertas
+  }
+  const resultado = { analisados: ids.length, completados, resumos, palavrasChave };
+  await salvarResultado(t, resultado);
+  if (usuarioId) {
+    await notificar([usuarioId], 'METADADOS_COMPLETADOS', `Dados completados: ${resumos} resumo(s) e ${palavrasChave} lista(s) de palavras-chave em ${ids.length} documento(s)`, { revisaoId: revisaoId ?? null, ...resultado });
+  }
+  return resultado;
+};
+
 export const handlers: Record<string, Handler> = {
+  'completar-metadados': completarMetadadosDocs,
   'importar-busca': importarBusca,
   'gerar-pdf-protocolo': gerarPdfProtocolo,
   'gerar-pdf-projeto': gerarPdfProjeto,

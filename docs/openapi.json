@@ -1337,6 +1337,17 @@
                       ]
                     }
                   },
+                  "resumoAssunto": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 65000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "consideracoes": {
                     "anyOf": [
                       {
@@ -3445,6 +3456,44 @@
             "$ref": "#/components/responses/Erro"
           },
           "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        },
+        "x-papeis": [
+          "RESPONSAVEL",
+          "COLABORADOR"
+        ]
+      }
+    },
+    "/documentos/{id}/completar": {
+      "post": {
+        "tags": [
+          "Documentos"
+        ],
+        "operationId": "postDocumentosByidCompletar",
+        "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
             "$ref": "#/components/responses/Erro"
           }
         },
@@ -6555,6 +6604,44 @@
             "$ref": "#/components/responses/Erro"
           },
           "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        },
+        "x-papeis": [
+          "RESPONSAVEL",
+          "COLABORADOR"
+        ]
+      }
+    },
+    "/projetos/{id}/documentos/completar": {
+      "post": {
+        "tags": [
+          "Documentos"
+        ],
+        "operationId": "postProjetosByidDocumentosCompletar",
+        "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Aceito: tarefa enfileirada no worker; acompanhe em GET /tarefas/{id}"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
             "$ref": "#/components/responses/Erro"
           }
         },
@@ -10310,6 +10397,119 @@
         ]
       }
     },
+    "/projetos/{id}/uso-ia": {
+      "post": {
+        "tags": [
+          "Projetos"
+        ],
+        "operationId": "postProjetosByidUsoIa",
+        "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "recurso": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "modo": {
+                    "type": "string",
+                    "enum": [
+                      "API",
+                      "ASSISTENTE"
+                    ]
+                  },
+                  "provedor": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 40
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "modelo": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "entidade": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 40
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "entidadeId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 36
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "recurso",
+                  "modo"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Sem conteúdo"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        },
+        "x-papeis": [
+          "RESPONSAVEL",
+          "COLABORADOR"
+        ]
+      }
+    },
     "/projetos/convites/aceitar": {
       "post": {
         "tags": [
@@ -10866,6 +11066,44 @@
             "$ref": "#/components/responses/Erro"
           },
           "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        },
+        "x-papeis": [
+          "RESPONSAVEL",
+          "COLABORADOR"
+        ]
+      }
+    },
+    "/revisoes/{id}/completar-metadados": {
+      "post": {
+        "tags": [
+          "Revisões"
+        ],
+        "operationId": "postRevisoesByidCompletarMetadados",
+        "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Aceito: tarefa enfileirada no worker; acompanhe em GET /tarefas/{id}"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
             "$ref": "#/components/responses/Erro"
           }
         },

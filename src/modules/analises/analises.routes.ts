@@ -215,13 +215,14 @@ analises.put(
   validate({
     body: z.object({
       respostas: z.array(z.object({ questaoAnaliseId: z.guid(), texto: z.string().max(65_000).nullable() })).max(200).optional(),
+      resumoAssunto: longText(),
       consideracoes: longText(),
       observacoes: longText(),
     }),
   }),
   async (req, res) => {
     const ad = await analiseDocumento(req);
-    const { respostas = [], consideracoes, observacoes } = req.validated.body;
+    const { respostas = [], resumoAssunto, consideracoes, observacoes } = req.validated.body;
     const permitidas = new Set((await db('analiseQuestao').where({ analiseId: ad.analiseId }).select('questaoAnaliseId')).map((r: any) => r.questaoAnaliseId));
     const invalida = respostas.find((r: any) => !permitidas.has(r.questaoAnaliseId));
     if (invalida) throw AppError.unprocessable('Questão não faz parte desta análise', { questaoAnaliseId: invalida.questaoAnaliseId });
@@ -233,6 +234,7 @@ analises.put(
           .merge(['texto', 'atualizadoPor']);
       }
       const extra: Record<string, unknown> = {};
+      if (resumoAssunto !== undefined) extra.resumoAssunto = resumoAssunto;
       if (consideracoes !== undefined) extra.consideracoes = consideracoes;
       if (observacoes !== undefined) extra.observacoes = observacoes;
       if (Object.keys(extra).length) await trx('analiseDocumento').where({ id: ad.id }).update(extra);

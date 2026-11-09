@@ -11,6 +11,21 @@ import { referenciaApa, referenciaNbr } from '#utils/referencias.ts';
 import { longText, optText, paginar, pagination, sortBy } from '#shared/schemas.ts';
 import { salvarArquivo, urlDoArquivo } from '#services/arquivos.ts';
 import { auditar } from '#services/audit.ts';
+import { enfileirar } from '#services/fila.ts';
+import { completarMetadados } from '#services/metadados.ts';
+
+/** Busca na web os campos em branco do documento e grava só o que estava vazio */
+export async function completarDocumento(id: string, usuarioId: string | null, projetoId?: string) {
+  const atual = await db('documento').where({ id }).first();
+  if (!atual) throw AppError.notFound('Documento');
+  const { campos, fontes } = await completarMetadados(atual);
+  const preenchidos = Object.keys(campos);
+  if (preenchidos.length) {
+    await db('documento').where({ id }).update(prepararDocumento(campos, atual));
+    await auditar({ projetoId: projetoId ?? atual.projetoId, entidade: 'documento', entidadeId: id, acao: 'ALTERAR', depois: { completadoDaWeb: preenchidos, fontes, usuarioId } });
+  }
+  return { preenchidos, fontes };
+}
 
 export const documentoSchema = z.object({
   titulo: z.string().trim().min(1).max(5000),
@@ -107,6 +122,12 @@ documentosDoProjeto.post('/', requirePapel(...EDITA), validate({ body: documento
   res.status(201).json(await detalhe(id));
 });
 
+// Completar resumos e palavras-chave em branco de todos os documentos do projeto (no worker)
+documentosDoProjeto.post('/completar', requirePapel(...EDITA), async (req, res) => {
+  const tarefaId = await enfileirar('completar-metadados', { projetoId: req.projeto!.id, usuarioId: req.user!.id });
+  res.status(202).json({ tarefaId, acompanhar: `/api/v1/tarefas/${tarefaId}` });
+});
+
 // ------------------------------------------------ /documentos/:id
 export const documentos = Router();
 documentos.use('/:id', projectAccess('documento'));
@@ -134,6 +155,13 @@ documentos.delete('/:id', requirePapel(...EDITA), async (req, res) => {
   await db('documento').where({ id }).del();
   auditar({ req, entidade: 'documento', entidadeId: id, acao: 'EXCLUIR' });
   res.status(204).end();
+});
+
+// Completa na hora um documento: resumo, palavras-chave, DOI, ano, autores e periódico em branco
+documentos.post('/:id/completar', requirePapel(...EDITA), async (req, res) => {
+  const id = String(req.params.id);
+  const r = await completarDocumento(id, req.user!.id, req.projeto!.id);
+  res.json({ ...r, documento: await detalhe(id) });
 });
 
 // RF27: gera de novo as referências a partir dos metadados
