@@ -1416,7 +1416,8 @@
                     "type": "string",
                     "enum": [
                       "xlsx",
-                      "pdf"
+                      "pdf",
+                      "docx"
                     ]
                   }
                 },
@@ -6592,7 +6593,8 @@
                     "type": "string",
                     "enum": [
                       "xlsx",
-                      "pdf"
+                      "pdf",
+                      "docx"
                     ]
                   }
                 }
@@ -8367,6 +8369,13 @@
                     "type": "integer",
                     "exclusiveMinimum": 0,
                     "maximum": 9007199254740991
+                  },
+                  "formato": {
+                    "type": "string",
+                    "enum": [
+                      "pdf",
+                      "docx"
+                    ]
                   },
                   "secoes": {
                     "type": "array",
@@ -11646,6 +11655,25 @@
             "name": "id"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "formato": {
+                    "type": "string",
+                    "enum": [
+                      "pdf",
+                      "docx"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Aceito: tarefa enfileirada no worker; acompanhe em GET /tarefas/{id}"
@@ -11654,6 +11682,9 @@
             "$ref": "#/components/responses/Erro"
           },
           "404": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "422": {
             "$ref": "#/components/responses/Erro"
           }
         }

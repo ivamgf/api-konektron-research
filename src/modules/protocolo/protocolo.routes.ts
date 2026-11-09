@@ -159,14 +159,15 @@ router.post(
   validate({
     body: z.object({
       versao: z.number().int().positive().optional(),
+      formato: z.enum(['pdf', 'docx']).optional(),
       secoes: z.array(z.enum(['identificacao', 'definicoes', 'estrategia', 'questoes', 'criterios', 'revisoes', 'historico', 'referencias'])).optional(),
     }),
   }),
   async (req, res) => {
     const p = await protocoloDoProjeto(req.projeto!.id);
-    const { versao, secoes } = req.validated.body;
+    const { versao, secoes, formato } = req.validated.body;
     if (versao && !(await db('protocoloVersao').where({ protocoloId: p.id, versao }).first('id'))) throw AppError.notFound('Versão');
-    const tarefaId = await enfileirar('gerar-pdf-protocolo', { protocoloId: p.id, projetoId: req.projeto!.id, versao: versao ?? null, secoes: secoes ?? null, usuarioId: req.user!.id });
+    const tarefaId = await enfileirar('gerar-pdf-protocolo', { protocoloId: p.id, projetoId: req.projeto!.id, versao: versao ?? null, secoes: secoes ?? null, formato: formato ?? 'pdf', usuarioId: req.user!.id });
     auditar({ req, entidade: 'protocolo', entidadeId: p.id, acao: 'IMPRIMIR', depois: { versao: versao ?? 'atual' } });
     res.status(202).json({ tarefaId, status: 'PENDENTE', acompanhar: `/api/v1/tarefas/${tarefaId}` });
   },

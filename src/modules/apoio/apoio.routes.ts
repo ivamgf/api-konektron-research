@@ -104,9 +104,9 @@ apoioDoProjeto.get('/busca', validate({ query: z.object({ q: z.string().trim().m
 
 // RF42: exportação do projeto (gerada no worker): planilha modelo (xlsx, padrão) ou PDF do projeto
 // inteiro — protocolo, relatórios das revisões e análises
-apoioDoProjeto.post('/exportar', validate({ body: z.object({ formato: z.enum(['xlsx', 'pdf']).optional() }) }), async (req, res) => {
-  const fila = req.validated.body.formato === 'pdf' ? 'gerar-pdf-projeto' : 'exportar-projeto';
-  const tarefaId = await enfileirar(fila, { projetoId: req.projeto!.id, usuarioId: req.user!.id });
+apoioDoProjeto.post('/exportar', validate({ body: z.object({ formato: z.enum(['xlsx', 'pdf', 'docx']).optional() }) }), async (req, res) => {
+  const fila = req.validated.body.formato === 'pdf' || req.validated.body.formato === 'docx' ? 'gerar-pdf-projeto' : 'exportar-projeto';
+  const tarefaId = await enfileirar(fila, { projetoId: req.projeto!.id, formato: req.validated.body.formato ?? 'xlsx', usuarioId: req.user!.id });
   res.status(202).json({ tarefaId, acompanhar: `/api/v1/tarefas/${tarefaId}` });
 });
 

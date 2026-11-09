@@ -257,7 +257,7 @@ analises.get('/:id/questoes/:qId/comparativo', async (req, res) => {
 });
 
 // RF41: exportação (gerada no worker)
-analises.post('/:id/exportar', validate({ body: z.object({ formato: z.enum(['xlsx', 'pdf']) }) }), async (req, res) => {
+analises.post('/:id/exportar', validate({ body: z.object({ formato: z.enum(['xlsx', 'pdf', 'docx']) }) }), async (req, res) => {
   const tarefaId = await enfileirar('exportar-analise', { analiseId: String(req.params.id), projetoId: req.projeto!.id, formato: req.validated.body.formato, usuarioId: req.user!.id });
   res.status(202).json({ tarefaId, acompanhar: `/api/v1/tarefas/${tarefaId}` });
 });
