@@ -249,6 +249,19 @@ CREATE TABLE protocolo (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC
   COMMENT='Protocolo principal da pesquisa — aba Definições (RF07–RF15).';
 
+CREATE TABLE protocolo_resumo (
+  id            CHAR(36)          NOT NULL,
+  protocolo_id  CHAR(36)          NOT NULL,
+  idioma_id     SMALLINT UNSIGNED NOT NULL,
+  texto         TEXT              NOT NULL,
+  ordem         INT UNSIGNED      NOT NULL DEFAULT 1,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_protocolo_resumo_idioma (protocolo_id, idioma_id),
+  CONSTRAINT fk_protocolo_resumo_protocolo FOREIGN KEY (protocolo_id) REFERENCES protocolo(id) ON DELETE CASCADE,
+  CONSTRAINT fk_protocolo_resumo_idioma FOREIGN KEY (idioma_id) REFERENCES idioma(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC
+  COMMENT='Resumo do protocolo por idioma';
+
 CREATE TABLE protocolo_versao (
   id              CHAR(36)     NOT NULL,
   protocolo_id    CHAR(36)     NOT NULL,

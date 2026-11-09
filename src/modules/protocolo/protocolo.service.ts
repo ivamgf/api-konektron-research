@@ -10,7 +10,7 @@ export async function protocoloDoProjeto(projetoId: string, trx?: Trx) {
 // Protocolo completo (aba Definições + estratégia de busca + questões + critérios)
 export async function protocoloCompleto(protocoloId: string, trx?: Trx) {
   const q = trx ?? db;
-  const [protocolo, outrasQuestoes, objetivos, palavrasChave, descritores, strings, questoes, criterios] = await Promise.all([
+  const [protocolo, outrasQuestoes, objetivos, palavrasChave, descritores, strings, questoes, criterios, resumos] = await Promise.all([
     q('protocolo').where({ id: protocoloId }).first(),
     q('protocoloOutraQuestao').where({ protocoloId }).orderBy('ordem'),
     q('objetivoEspecifico').where({ protocoloId }).orderBy('ordem'),
@@ -19,8 +19,9 @@ export async function protocoloCompleto(protocoloId: string, trx?: Trx) {
     q('stringBusca as s').leftJoin('baseDados as b', 'b.id', 's.baseDadosId').where('s.protocoloId', protocoloId).orderBy('s.ordem').select('s.*', 'b.nome as baseNome'),
     q('questaoAnalise').where({ protocoloId }).orderBy('ordem'),
     q('criterio').where({ protocoloId }).orderBy(['tipo', 'ordem']),
+    q('protocoloResumo as r').join('idioma as i', 'i.id', 'r.idiomaId').where('r.protocoloId', protocoloId).orderBy('r.ordem').select('r.*', 'i.codigo as idiomaCodigo', 'i.nome as idiomaNome'),
   ]);
-  return { ...protocolo, outrasQuestoes, objetivos, palavrasChave, descritores, strings, questoes, criterios };
+  return { ...protocolo, outrasQuestoes, objetivos, palavrasChave, descritores, strings, questoes, criterios, resumos };
 }
 
 // RN02: campos obrigatórios para concluir

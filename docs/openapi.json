@@ -7873,7 +7873,7 @@
                   "passoAtual": {
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 10
+                    "maximum": 11
                   },
                   "tema": {
                     "anyOf": [
@@ -8020,6 +8020,29 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "resumos": {
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "idioma": {
+                          "type": "string",
+                          "minLength": 2,
+                          "maxLength": 10
+                        },
+                        "texto": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 20000
+                        }
+                      },
+                      "required": [
+                        "idioma",
+                        "texto"
+                      ]
+                    }
                   },
                   "outrasQuestoes": {
                     "maxItems": 50,
@@ -8536,6 +8559,84 @@
             "$ref": "#/components/responses/Erro"
           }
         }
+      }
+    },
+    "/projetos/{id}/protocolo/traduzir": {
+      "post": {
+        "tags": [
+          "Protocolo"
+        ],
+        "operationId": "postProjetosByidProtocoloTraduzir",
+        "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "texto": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 20000
+                  },
+                  "de": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 10
+                  },
+                  "para": {
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 2,
+                      "maxLength": 10
+                    }
+                  }
+                },
+                "required": [
+                  "texto",
+                  "de",
+                  "para"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        },
+        "x-papeis": [
+          "RESPONSAVEL",
+          "COLABORADOR"
+        ]
       }
     },
     "/projetos/{id}/protocolo/versoes": {

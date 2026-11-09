@@ -52,6 +52,13 @@ const schema = z.object({
   FTP_MAX_CONEXOES: z.coerce.number().int().min(1).max(8).default(2),
   FTP_TIMEOUT_MS: z.coerce.number().int().min(1000).default(30_000),
 
+  // tradução automática dos resumos do protocolo (src/services/traducao.ts)
+  TRADUCAO_PROVEDOR: z.enum(['mymemory', 'deepl', 'libretranslate', 'desligado']).default('mymemory'),
+  MYMEMORY_EMAIL: optional,
+  DEEPL_API_KEY: optional,
+  LIBRETRANSLATE_URL: optional,
+  LIBRETRANSLATE_API_KEY: optional,
+
   SMTP_HOST: optional,
   SMTP_PORT: z.coerce.number().int().optional(),
   SMTP_SECURE: flag,

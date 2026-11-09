@@ -17,6 +17,9 @@ export type DadosProtocolo = {
   referencias?: { abnt: string | null; apa: string | null }[];
 };
 
+// título do resumo no próprio idioma
+const TITULO_RESUMO: Record<string, string> = { pt: 'Resumo', en: 'Abstract', es: 'Resumen', fr: 'Résumé', de: 'Zusammenfassung', it: 'Riassunto' };
+
 export const autoresDaEquipe = (equipe: any[]) => equipe.filter((m) => m.papel !== 'LEITOR').map((m) => m.nome).join(', ');
 
 /** Capa no layout Konektron (protocolo e projeto inteiro) */
@@ -52,6 +55,7 @@ ${mostra('identificacao') ? `<h2>1. Identificação</h2>
 <tr><th>Período</th><td>${dataBr(projeto.dataInicio)} a ${dataBr(projeto.dataFim)}</td></tr></table>
 <table><tr><th>Membro</th><th>Papel</th><th>ORCID</th></tr>${equipe.map((m) => `<tr><td>${esc(m.nome)}</td><td>${esc(m.papel)}</td><td class="mono">${esc(m.orcid ?? '')}</td></tr>`).join('')}</table>` : ''}
 ${mostra('definicoes') ? `<h2>2. Definições</h2>
+${(p.resumos ?? []).map((r: any) => `<h3>${esc(TITULO_RESUMO[r.idiomaCodigo] ?? `Resumo (${r.idiomaNome ?? r.idiomaCodigo})`)}</h3>${paragrafos(r.texto)}`).join('')}
 <h3>Tema</h3>${paragrafos(p.tema)}
 <h3>Questão de pesquisa</h3>${paragrafos(p.questaoPesquisa)}
 <h3>Outras questões</h3>${lista((p.outrasQuestoes ?? []).map((x: any) => x.texto))}

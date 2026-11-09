@@ -14,6 +14,8 @@ import { membrosDoProjeto, notificar } from '#services/notificacoes.ts';
 import { salvarArquivo, urlDoArquivo } from '#services/arquivos.ts';
 import { compararSnapshots, marcarAlterado, pendencias, protocoloCompleto, protocoloDoProjeto } from './protocolo.service.ts';
 import { CODIGOS_METODOLOGIA, modeloTcle } from './tcle.ts';
+import { traduzir } from '#services/traducao.ts';
+import { env } from '#config/env.ts';
 
 // Montado em /projetos/:id (projectAccess já aplicado no roteador pai)
 const router = Router({ mergeParams: true });
@@ -34,7 +36,7 @@ router.get('/protocolo', async (req, res) => {
 // RF07/RF08: salva o passo do assistente (rascunho). Listas enviadas substituem as atuais.
 const item = z.object({ texto: z.string().trim().min(1).max(5000) });
 const passoSchema = z.object({
-  passoAtual: z.number().int().min(1).max(10).optional(),
+  passoAtual: z.number().int().min(1).max(11).optional(),
   tema: longText(),
   questaoPesquisa: longText(),
   hipotese: longText(),
@@ -47,6 +49,11 @@ const passoSchema = z.object({
   riscos: longText(),
   beneficios: longText(),
   resultadosEsperados: longText(),
+  // passo 11: resumo em português, inglês, espanhol e outros idiomas do catálogo (código ISO 639-1)
+  resumos: z
+    .array(z.object({ idioma: z.string().trim().min(2).max(10), texto: z.string().trim().min(1).max(20_000) }))
+    .max(20)
+    .optional(),
   outrasQuestoes: z.array(item).max(50).optional(),
   objetivos: z.array(item).max(50).optional(),
   palavrasChave: z
@@ -77,7 +84,18 @@ const passoSchema = z.object({
 
 router.put('/protocolo', ...edita, validate({ body: passoSchema }), async (req, res) => {
   const p = await protocoloDoProjeto(req.projeto!.id);
-  const { outrasQuestoes, objetivos, palavrasChave, descritores, strings, ...campos } = req.validated.body;
+  const { outrasQuestoes, objetivos, palavrasChave, descritores, strings, resumos, ...campos } = req.validated.body;
+  // resumos: código do idioma → id do catálogo (um resumo por idioma; repetido vale o último)
+  let resumosComId: { idiomaId: number; texto: string }[] | undefined;
+  if (resumos) {
+    const idiomas = await db('idioma').whereIn('codigo', [...new Set<string>(resumos.map((r: any) => String(r.idioma).toLowerCase()))]).select('id', 'codigo');
+    const porCodigo = new Map(idiomas.map((i: any) => [i.codigo, i.id as number]));
+    const desconhecido = resumos.find((r: any) => !porCodigo.has(r.idioma.toLowerCase()));
+    if (desconhecido) throw AppError.unprocessable(`Idioma "${desconhecido.idioma}" não está no catálogo`, { campo: 'resumos' });
+    const unicos = new Map<number, string>();
+    for (const r of resumos) unicos.set(porCodigo.get(r.idioma.toLowerCase())!, r.texto);
+    resumosComId = [...unicos].map(([idiomaId, texto]) => ({ idiomaId, texto }));
+  }
   await db.transaction(async (trx) => {
     if (Object.keys(campos).length) await trx('protocolo').where({ id: p.id }).update(campos);
     const substituir = async (table: string, itens: Record<string, unknown>[] | undefined) => {
@@ -94,6 +112,7 @@ router.put('/protocolo', ...edita, validate({ body: passoSchema }), async (req, 
     );
     await substituir('descritor', descritores);
     await substituir('stringBusca', strings);
+    await substituir('protocoloResumo', resumosComId);
     await marcarAlterado(trx, p.id);
   });
   const completo = await protocoloCompleto(p.id);
@@ -150,6 +169,27 @@ router.post(
     const tarefaId = await enfileirar('gerar-pdf-protocolo', { protocoloId: p.id, projetoId: req.projeto!.id, versao: versao ?? null, secoes: secoes ?? null, usuarioId: req.user!.id });
     auditar({ req, entidade: 'protocolo', entidadeId: p.id, acao: 'IMPRIMIR', depois: { versao: versao ?? 'atual' } });
     res.status(202).json({ tarefaId, status: 'PENDENTE', acompanhar: `/api/v1/tarefas/${tarefaId}` });
+  },
+);
+
+// ---------------------------------------------------------------- tradução automática (resumos)
+
+router.post(
+  '/protocolo/traduzir',
+  ...edita,
+  validate({
+    body: z.object({
+      texto: z.string().trim().min(1).max(20_000),
+      de: z.string().trim().min(2).max(10),
+      para: z.array(z.string().trim().min(2).max(10)).min(1).max(10),
+    }),
+  }),
+  async (req, res) => {
+    const { texto, de, para } = req.validated.body;
+    const traducoes: Record<string, string> = {};
+    for (const alvo of [...new Set<string>(para)]) traducoes[alvo] = await traduzir(texto, de, alvo);
+    auditar({ req, entidade: 'protocolo', entidadeId: req.projeto!.id, acao: 'ALTERAR', depois: { traducao: { de, para, caracteres: texto.length } } });
+    res.json({ traducoes, provedor: env.TRADUCAO_PROVEDOR, aviso: 'Tradução automática: revise antes de concluir o protocolo.' });
   },
 );
 
