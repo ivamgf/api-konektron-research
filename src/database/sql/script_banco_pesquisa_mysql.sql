@@ -732,6 +732,7 @@ CREATE TABLE analise_documento (
   analise_id      CHAR(36)     NOT NULL,
   documento_id    CHAR(36)     NOT NULL,
   ordem           INT UNSIGNED,
+  resumo_assunto  TEXT         COMMENT 'resumo do assunto do documento, base para as respostas',
   consideracoes   TEXT,
   observacoes     TEXT,
   progresso       ENUM('NAO_INICIADO','PARCIAL','CONCLUIDO') NOT NULL DEFAULT 'NAO_INICIADO',

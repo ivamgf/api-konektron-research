@@ -2,7 +2,7 @@ import type { Request } from 'express';
 import { db, json, type Trx } from '#database/connection.ts';
 import { logger } from '#utils/logger.ts';
 
-type Acao = 'CRIAR' | 'ALTERAR' | 'EXCLUIR' | 'DECIDIR' | 'CONCLUIR' | 'IMPRIMIR' | 'APROVAR' | 'DEVOLVER' | 'LOGIN';
+type Acao = 'CRIAR' | 'ALTERAR' | 'EXCLUIR' | 'DECIDIR' | 'CONCLUIR' | 'IMPRIMIR' | 'APROVAR' | 'DEVOLVER' | 'LOGIN' | 'USAR_IA';
 
 // RF44: trilha de auditoria. Dentro de uma transação, grava junto; fora dela, nunca derruba a requisição.
 export async function auditar(

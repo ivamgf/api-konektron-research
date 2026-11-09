@@ -55,6 +55,9 @@ const schema = z.object({
   // tradução automática dos resumos do protocolo (src/services/traducao.ts)
   TRADUCAO_PROVEDOR: z.enum(['mymemory', 'deepl', 'libretranslate', 'desligado']).default('mymemory'),
   MYMEMORY_EMAIL: optional,
+  // completar metadados de documentos (src/services/metadados.ts): e-mail de contato enviado ao
+  // OpenAlex e ao Crossref ("polite pool", respostas mais rápidas); opcional
+  METADADOS_EMAIL: optional,
   DEEPL_API_KEY: optional,
   LIBRETRANSLATE_URL: optional,
   LIBRETRANSLATE_API_KEY: optional,
