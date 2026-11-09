@@ -140,7 +140,7 @@ router.post(
   validate({
     body: z.object({
       versao: z.number().int().positive().optional(),
-      secoes: z.array(z.enum(['identificacao', 'definicoes', 'estrategia', 'questoes', 'criterios', 'revisoes', 'historico'])).optional(),
+      secoes: z.array(z.enum(['identificacao', 'definicoes', 'estrategia', 'questoes', 'criterios', 'revisoes', 'historico', 'referencias'])).optional(),
     }),
   }),
   async (req, res) => {

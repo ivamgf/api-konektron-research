@@ -13,6 +13,8 @@ export type DadosProtocolo = {
   revisoes: any[];
   versoes: any[];
   secoes?: string[] | null;
+  /** referências do projeto (ABNT e APA) */
+  referencias?: { abnt: string | null; apa: string | null }[];
 };
 
 export const autoresDaEquipe = (equipe: any[]) => equipe.filter((m) => m.papel !== 'LEITOR').map((m) => m.nome).join(', ');
@@ -70,5 +72,17 @@ ${mostra('criterios') ? `<h2>5. Critérios de inclusão e exclusão</h2>
 ${['INCLUSAO', 'EXCLUSAO'].map((t) => `<h3>${t === 'INCLUSAO' ? 'Inclusão' : 'Exclusão'}</h3><table><tr><th>Critério</th><th>Descrição</th></tr>${(p.criterios ?? []).filter((c: any) => c.tipo === t).map((c: any) => `<tr><td>${esc(c.nome)}</td><td>${esc(c.descricao ?? '')}</td></tr>`).join('') || '<tr><td colspan="2" class="vazio">Nenhum</td></tr>'}</table>`).join('')}` : ''}
 ${mostra('revisoes') ? `<h2>6. Revisões previstas</h2>${revisoes.length ? revisoes.map((r) => `<h3>${esc(r.titulo)}</h3><p>Tipo: ${esc(r.tipoNome)} · Diretriz de relato: ${r.diretrizSigla ? `${esc(r.diretrizSigla)} ${esc(r.diretrizVersao ?? '')} — ${esc(r.diretrizUrl ?? '')}` : 'nenhuma'}</p>${lista(r.etapas.map((e: any) => e.nome))}`).join('') : '<p class="vazio">Nenhuma revisão cadastrada</p>'}` : ''}
 ${mostra('historico') ? `<h2>7. Histórico de versões e aprovação</h2><table><tr><th>Versão</th><th>Data</th><th>Autor</th><th>Justificativa</th></tr>${versoes.map((v) => `<tr><td>${v.versao}</td><td>${dataBr(v.criadoEm)}</td><td>${esc(v.criadoPorNome ?? '')}</td><td>${esc(v.justificativa ?? '—')}</td></tr>`).join('') || '<tr><td colspan="4" class="vazio">Sem versões concluídas</td></tr>'}</table>
-${p.aprovadoEm ? `<p>Aprovado por ${esc(p.aprovadoPorNome ?? 'orientador(a)')} em ${dataBr(p.aprovadoEm)}.</p>` : ''}${p.parecer ? `<h3>Parecer</h3>${paragrafos(p.parecer)}` : ''}` : ''}`;
+${p.aprovadoEm ? `<p>Aprovado por ${esc(p.aprovadoPorNome ?? 'orientador(a)')} em ${dataBr(p.aprovadoEm)}.</p>` : ''}${p.parecer ? `<h3>Parecer</h3>${paragrafos(p.parecer)}` : ''}` : ''}
+${mostra('referencias') ? secaoReferencias(o.referencias ?? []) : ''}`;
+}
+
+/** 8. Referências: lista em ABNT (NBR 6023) e, quando houver, em APA (7ª ed.) */
+function secaoReferencias(refs: { abnt: string | null; apa: string | null }[]) {
+  if (!refs.length) return '';
+  const abnt = refs.map((r) => r.abnt).filter((x): x is string => !!x?.trim());
+  const apa = refs.map((r) => r.apa).filter((x): x is string => !!x?.trim()).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const bloco = (itens: string[]) => itens.map((t) => `<p class="ref">${esc(t)}</p>`).join('');
+  return `<h2>8. Referências</h2>
+${abnt.length ? `<h3>ABNT (NBR 6023)</h3>${bloco(abnt)}` : ''}
+${apa.length ? `<h3>APA (7ª edição)</h3>${bloco(apa)}` : ''}`;
 }

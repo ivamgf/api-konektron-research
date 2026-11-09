@@ -11,6 +11,7 @@ import { capa, htmlProtocolo, secoesProtocolo, type DadosProtocolo } from '#pdf/
 import { protocoloCompleto } from '#modules/protocolo/protocolo.service.ts';
 import { painel } from '#modules/revisoes/revisoes.service.ts';
 import { dadosDiagrama, diagramaSvg } from '#modules/revisoes/diagrama.ts';
+import { referenciasDoProjeto } from '#modules/referencias/referencias.routes.ts';
 import { detectarDuplicados } from '#modules/documentos/duplicados.ts';
 import { lerArquivoDeBusca } from './parsers.ts';
 import type { Tarefa } from '#services/fila.ts';
@@ -96,7 +97,8 @@ async function dadosProtocolo(protocoloId: string, projetoId: string, versao: nu
   }
   const versoes = await db('protocoloVersao as v').leftJoin('usuario as u', 'u.id', 'v.criadoPor').where('v.protocoloId', protocoloId).orderBy('v.versao').select('v.versao', 'v.criadoEm', 'v.justificativa', 'u.nome as criadoPorNome');
   const numero = versao ?? (atual.versaoAtual || null);
-  return { v, dados: { projeto, equipe, p, versao: numero, status, revisoes, versoes, secoes } satisfies DadosProtocolo };
+  const referencias = await referenciasDoProjeto(projetoId);
+  return { v, dados: { projeto, equipe, p, versao: numero, status, revisoes, versoes, secoes, referencias } satisfies DadosProtocolo };
 }
 
 const gerarPdfProtocolo: Handler = async (t) => {

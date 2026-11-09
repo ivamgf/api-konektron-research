@@ -12,6 +12,7 @@ import usuariosRoutes from '#modules/usuarios/usuarios.routes.ts';
 import catalogosRoutes from '#modules/catalogos/catalogos.routes.ts';
 import projetosRoutes from '#modules/projetos/projetos.routes.ts';
 import protocoloRoutes from '#modules/protocolo/protocolo.routes.ts';
+import referenciasRoutes from '#modules/referencias/referencias.routes.ts';
 import tiposRevisaoRoutes from '#modules/tipos-revisao/tiposRevisao.routes.ts';
 import { buscas, revisoes, revisoesDoProjeto } from '#modules/revisoes/revisoes.routes.ts';
 import { documentos, documentosDoProjeto } from '#modules/documentos/documentos.routes.ts';
@@ -60,6 +61,7 @@ const doProjeto = Router({ mergeParams: true });
 doProjeto.use(protocoloRoutes); // /protocolo, /questoes, /criterios, /strings, /palavras-chave, /descritores...
 doProjeto.use('/revisoes', revisoesDoProjeto);
 doProjeto.use('/documentos', documentosDoProjeto);
+doProjeto.use('/referencias', referenciasRoutes); // referências do projeto em ABNT e APA
 doProjeto.use('/analises', analisesDoProjeto);
 doProjeto.use(apoioDoProjeto); // /temas, /categorias, /comentarios, /busca, /exportar
 router.use('/projetos/:id', projectAccess('projeto'), doProjeto);
