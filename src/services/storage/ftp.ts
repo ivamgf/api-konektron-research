@@ -52,7 +52,8 @@ class Fila {
 
 export class FtpStorageProvider implements StorageProvider {
   readonly provedor = 'FTP' as const;
-  private base = (env.FTP_BASE_PATH ?? '').replace(/\/+$/, '');
+  // "/" = a pasta inicial da conta FTP (contas do cPanel criadas já presas à pasta de destino)
+  private base = (env.FTP_BASE_PATH ?? '').replace(/\/+$/, '') || '/';
   private fila = new Fila(env.FTP_MAX_CONEXOES);
   private protegido = false;
 
