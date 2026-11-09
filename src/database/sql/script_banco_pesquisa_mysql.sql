@@ -122,7 +122,7 @@ CREATE TABLE refresh_token (
 CREATE TABLE arquivo (
   id             CHAR(36)        NOT NULL,
   projeto_id     CHAR(36)        COMMENT 'FK adicionada na seção 2',
-  provedor       ENUM('LOCAL','GCS') NOT NULL DEFAULT 'LOCAL',
+  provedor       ENUM('LOCAL','GCS','FTP') NOT NULL DEFAULT 'LOCAL',
   chave_storage  VARCHAR(500)    NOT NULL,
   nome_original  VARCHAR(255)    NOT NULL,
   mime_type      VARCHAR(100)    NOT NULL,
