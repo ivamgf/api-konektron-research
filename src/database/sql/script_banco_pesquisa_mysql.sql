@@ -222,7 +222,7 @@ CREATE TABLE protocolo (
   projeto_id        CHAR(36)    NOT NULL COMMENT 'único: RN01',
   status            ENUM('RASCUNHO','CONCLUIDO','APROVADO','DEVOLVIDO') NOT NULL DEFAULT 'RASCUNHO',
   versao_atual      INT UNSIGNED     NOT NULL DEFAULT 0,
-  passo_atual       TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '1 a 8',
+  passo_atual       TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '1 a 11 (gatilho aceita até 20)',
   tema              TEXT,
   questao_pesquisa  TEXT,
   hipotese          TEXT,
@@ -1702,17 +1702,17 @@ BEGIN
   END IF;
 END$$
 
--- protocolo: passo de 1 a 8
+-- protocolo: passo de 1 a 11 (folga até 20; o limite exato é validado pela API)
 CREATE TRIGGER trg_protocolo_bi BEFORE INSERT ON protocolo FOR EACH ROW
 BEGIN
-  IF NEW.passo_atual NOT BETWEEN 1 AND 8 THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'passo_atual deve ficar entre 1 e 8.';
+  IF NEW.passo_atual NOT BETWEEN 1 AND 20 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'passo_atual deve ficar entre 1 e 20.';
   END IF;
 END$$
 CREATE TRIGGER trg_protocolo_bu BEFORE UPDATE ON protocolo FOR EACH ROW
 BEGIN
-  IF NEW.passo_atual NOT BETWEEN 1 AND 8 THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'passo_atual deve ficar entre 1 e 8.';
+  IF NEW.passo_atual NOT BETWEEN 1 AND 20 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'passo_atual deve ficar entre 1 e 20.';
   END IF;
 END$$
 
