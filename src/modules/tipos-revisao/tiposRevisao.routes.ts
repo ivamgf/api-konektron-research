@@ -6,6 +6,7 @@ import { AppError } from '#utils/AppError.ts';
 import { uuid } from '#utils/tokens.ts';
 import { idParams, longText } from '#shared/schemas.ts';
 import { compactar, proximaOrdem, reordenar } from '#shared/ordem.ts';
+import { erroOrdemDasFases } from '#shared/fasesTriagem.ts';
 import { conferirCiclo, conferirEscrita, conferirLeitura, copiarEtapas, eSistematico } from './tiposRevisao.service.ts';
 
 const router = Router();
@@ -169,6 +170,9 @@ router.post('/:id/etapas', validate({ params: idParams, body: etapaSchema }), as
 router.put('/:id/etapas/ordem', validate({ params: idParams, body: z.object({ ids: z.array(z.guid()).min(1) }) }), async (req, res) => {
   const t = await carregar(req.validated.params.id);
   await conferirEscrita(req, t.projetoId);
+  const atuais = await db('etapaModelo').where({ tipoRevisaoId: t.id });
+  const fora = erroOrdemDasFases(req.validated.body.ids.map((id: string) => atuais.find((x: any) => x.id === id)).filter(Boolean));
+  if (fora) throw AppError.unprocessable(fora);
   await db.transaction((trx) => reordenar(trx, 'etapaModelo', { tipoRevisaoId: t.id }, req.validated.body.ids));
   res.json(await db('etapaModelo').where({ tipoRevisaoId: t.id }).orderBy('ordem'));
 });

@@ -1,6 +1,7 @@
 import { db, type Trx } from '#database/connection.ts';
 import { AppError } from '#utils/AppError.ts';
 import { uuid } from '#utils/tokens.ts';
+import { corrigirOrdemDasFases } from '#shared/fasesTriagem.ts';
 
 export async function revisaoDoProjeto(revisaoId: string, projetoId: string, trx?: Trx) {
   const r = await (trx ?? db)('revisao').where({ id: revisaoId, projetoId }).first();
@@ -35,7 +36,8 @@ export async function instanciarEtapas(
       permiteExclusao: e.permiteExclusao,
     }));
   if (!fonte.length) throw AppError.unprocessable('O tipo de revisão não tem etapas');
-  const linhas = fonte.map((e, i) => ({
+  // F1 → F2 → F3, mesmo que as etapas ajustadas venham em outra ordem
+  const linhas = corrigirOrdemDasFases(fonte).map((e, i) => ({
     id: uuid(),
     revisaoId,
     etapaModeloId: e.etapaModeloId ?? null,

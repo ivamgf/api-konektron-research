@@ -8,6 +8,7 @@ import { AppError } from '#utils/AppError.ts';
 import { uuid } from '#utils/tokens.ts';
 import { dateStr, idParams, longText, optText } from '#shared/schemas.ts';
 import { reordenar } from '#shared/ordem.ts';
+import { erroOrdemDasFases } from '#shared/fasesTriagem.ts';
 import { auditar } from '#services/audit.ts';
 import { salvarArquivo } from '#services/arquivos.ts';
 import { enfileirar } from '#services/fila.ts';
@@ -169,6 +170,9 @@ revisoes.put('/:id/etapas/ordem', requirePapel(...DONO), validate({ body: z.obje
       const e = atuais.find((x: any) => x.id === id);
       if (e && e.ordem !== i + 1 && e.status !== 'PENDENTE') throw AppError.conflict(`A etapa "${e.nome}" já começou e não pode mudar de posição`);
     });
+    // F1 → F2 → F3
+    const fora = erroOrdemDasFases(req.validated.body.ids.map((id: string) => atuais.find((x: any) => x.id === id)).filter(Boolean));
+    if (fora) throw AppError.unprocessable(fora);
     await reordenar(trx, 'revisaoEtapa', { revisaoId }, req.validated.body.ids);
   });
   res.json(await db('revisaoEtapa').where({ revisaoId }).orderBy('ordem'));
@@ -211,6 +215,10 @@ revisoes.patch(
         const fim = (novo.concluidaEm ?? e.concluidaEm) as Date | null;
         if (inicio && fim && new Date(fim) < new Date(inicio)) throw AppError.unprocessable('A data de fim não pode ser anterior à de início', { campo: 'concluidaEm' });
         if (dados.justificativaDispensa && e.status !== 'DISPENSADA') throw AppError.unprocessable('Só etapas dispensadas têm justificativa de dispensa', { campo: 'justificativaDispensa' });
+        if (dados.nome) {
+          const fora = erroOrdemDasFases(etapas.map((x: any) => (x.id === e.id ? { ...x, nome: dados.nome } : x)));
+          if (fora) throw AppError.unprocessable(fora, { campo: 'nome' });
+        }
         await trx('revisaoEtapa').where({ id: e.id }).update(novo);
         await auditar({ req, entidade: 'revisao_etapa', entidadeId: e.id, acao: 'ALTERAR', antes: Object.fromEntries(Object.keys(dados).map((k) => [k, e[k]])), depois: dados }, trx);
       }
