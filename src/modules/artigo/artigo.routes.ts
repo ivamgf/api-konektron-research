@@ -43,9 +43,16 @@ router.put(
 );
 
 const bloco = z.object({
-  tipo: z.enum(['p', 'h3', 'lista', 'citacao', 'ref', 'nota']),
+  tipo: z.enum(['p', 'h3', 'lista', 'citacao', 'ref', 'nota', 'tabela']),
   texto: z.string().max(200_000).optional(),
   itens: z.array(z.string().max(20_000)).max(500).optional(),
+  cabecalho: z.array(z.string().max(200)).max(12).optional(),
+  linhas: z
+    .array(z.array(z.string().max(5_000)).max(12))
+    .max(2_000)
+    .optional(),
+  fonte: z.string().max(500).optional(),
+  gerado: z.boolean().optional(),
 });
 const documento = z.object({
   titulo: z.string().trim().min(1).max(500),

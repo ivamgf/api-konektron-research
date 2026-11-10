@@ -67,7 +67,27 @@ export async function fontesDoArtigo(projetoId: string) {
       'd.versao as diretrizVersao',
     );
   const revisoes = [];
-  for (const r of revisoesBase) revisoes.push({ ...r, diagrama: await dadosDiagrama(r.id) });
+  for (const r of revisoesBase) {
+    // artigos incluídos ao final: das buscas (com a base), de revisão anterior e integrados
+    const incluidos = await db('revisaoDocumento as rd')
+      .join('documento as d', 'd.id', 'rd.documentoId')
+      .leftJoin('busca as b', 'b.id', 'rd.buscaId')
+      .leftJoin('baseDados as bd', 'bd.id', db.raw('COALESCE(b.base_dados_id, d.base_dados_id)'))
+      .where('rd.revisaoId', r.id)
+      .where('rd.situacao', 'INCLUIDO')
+      .whereNull('rd.duplicadoDeId')
+      .orderBy([{ column: 'rd.origem' }, { column: 'd.autores' }, { column: 'd.ano' }])
+      .select(
+        'rd.origem',
+        'd.titulo',
+        'd.autores',
+        'd.ano',
+        'd.periodico',
+        'd.doi',
+        'bd.nome as baseNome',
+      );
+    revisoes.push({ ...r, diagrama: await dadosDiagrama(r.id), incluidos });
+  }
 
   // documentos de revisão anterior / referencial teórico (para a fundamentação)
   const anteriores = new Set(
@@ -188,9 +208,15 @@ export async function fontesDoArtigo(projetoId: string) {
 // ------------------------------------------------------------------ documento final → HTML
 
 export type Bloco = {
-  tipo: 'p' | 'h3' | 'lista' | 'citacao' | 'ref' | 'nota';
+  tipo: 'p' | 'h3' | 'lista' | 'citacao' | 'ref' | 'nota' | 'tabela';
   texto?: string;
   itens?: string[];
+  /** tabela (quadro, no padrão ABNT): título em cima, fonte embaixo */
+  cabecalho?: string[];
+  linhas?: string[][];
+  fonte?: string;
+  /** trecho montado pelo sistema (modelo, dados do projeto ou IA): sai destacado para o autor reescrever */
+  gerado?: boolean;
 };
 export type DocumentoArtigo = {
   titulo: string;
@@ -201,8 +227,31 @@ export type DocumentoArtigo = {
 
 const texto = (t?: string) => esc(t ?? '').replace(/\n/g, '<br>');
 
+const DESTAQUE = 'background-color:#FFF2A8';
+
 function bloco(b: Bloco): string {
+  if (b.gerado && b.tipo !== 'tabela' && b.tipo !== 'ref') {
+    const realce = (t?: string) => `<span style="${DESTAQUE}">${texto(t)}</span>`;
+    if (b.tipo === 'lista')
+      return `<ul>${(b.itens ?? []).map((i) => `<li>${realce(i)}</li>`).join('')}</ul>`;
+    return bloco({ ...b, gerado: false, texto: undefined })
+      .replace('></p>', `>${realce(b.texto)}</p>`)
+      .replace('></h3>', `>${realce(b.texto)}</h3>`);
+  }
   switch (b.tipo) {
+    case 'tabela':
+      return (
+        `<p style="text-align:center;font-size:10pt;margin-bottom:4pt"><b>${texto(b.texto)}</b></p>` +
+        `<table style="border-collapse:collapse;width:100%;font-size:9pt"><thead><tr>${(b.cabecalho ?? []).map((c) => `<th style="border:1px solid #000;padding:3px;text-align:left">${texto(c)}</th>`).join('')}</tr></thead><tbody>` +
+        (b.linhas ?? [])
+          .map(
+            (l) =>
+              `<tr>${l.map((c) => `<td style="border:1px solid #000;padding:3px;vertical-align:top">${texto(c)}</td>`).join('')}</tr>`,
+          )
+          .join('') +
+        `</tbody></table>` +
+        (b.fonte ? `<p style="font-size:9pt;margin-top:4pt">${texto(b.fonte)}</p>` : '')
+      );
     case 'h3':
       return `<h3>${texto(b.texto)}</h3>`;
     case 'lista':

@@ -5062,7 +5062,8 @@
                                   "lista",
                                   "citacao",
                                   "ref",
-                                  "nota"
+                                  "nota",
+                                  "tabela"
                                 ]
                               },
                               "texto": {
@@ -5076,6 +5077,33 @@
                                   "type": "string",
                                   "maxLength": 20000
                                 }
+                              },
+                              "cabecalho": {
+                                "maxItems": 12,
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "maxLength": 200
+                                }
+                              },
+                              "linhas": {
+                                "maxItems": 2000,
+                                "type": "array",
+                                "items": {
+                                  "maxItems": 12,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 5000
+                                  }
+                                }
+                              },
+                              "fonte": {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              "gerado": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
