@@ -54,7 +54,10 @@ export function prepararHtmlParaWord(html: string): string {
   );
 }
 
-export async function htmlParaDocx(html: string, titulo: string): Promise<Buffer> {
+/** Opções do Word: cabeçalho e rodapé (null = sem), fonte e tamanho em pontos */
+export type OpcoesDocx = { cabecalho?: string | null; rodape?: string | null; fonte?: string; tamanho?: number };
+
+export async function htmlParaDocx(html: string, titulo: string, opcoes: OpcoesDocx = {}): Promise<Buffer> {
   const HTMLtoDOCX = (await import('@turbodocx/html-to-docx')).default as unknown as (
     html: string,
     header?: string | null,
@@ -64,21 +67,21 @@ export async function htmlParaDocx(html: string, titulo: string): Promise<Buffer
   const corpo = prepararHtmlParaWord(await svgsParaPng(html));
   const saida = await HTMLtoDOCX(
     corpo,
-    '<p style="color:#007A4F;font-size:8pt">Konektron Research</p>',
+    opcoes.cabecalho === undefined ? '<p style="color:#007A4F;font-size:8pt">Konektron Research</p>' : opcoes.cabecalho,
     {
       title: titulo,
       creator: 'Konektron Research',
       orientation: 'portrait',
       margins: { top: Math.round(2.5 * CM), bottom: Math.round(2.5 * CM), left: Math.round(2.5 * CM), right: Math.round(2.5 * CM), header: 400, footer: 400 },
-      font: 'Calibri',
-      fontSize: 22, // meios-pontos: 11 pt
-      header: true,
+      font: opcoes.fonte ?? 'Calibri',
+      fontSize: Math.round((opcoes.tamanho ?? 11) * 2), // meios-pontos
+      header: opcoes.cabecalho !== null,
       footer: true,
       pageNumber: true,
       lang: 'pt-BR',
       table: { row: { cantSplit: true } },
     },
-    `<p style="font-size:8pt;color:#454D50">${titulo} · página </p>`,
+    opcoes.rodape === undefined ? `<p style="font-size:8pt;color:#454D50">${titulo} · página </p>` : (opcoes.rodape ?? ''),
   );
   if (Buffer.isBuffer(saida)) return saida;
   if (saida instanceof ArrayBuffer) return Buffer.from(saida);

@@ -19,6 +19,7 @@ import { documentos, documentosDoProjeto } from '#modules/documentos/documentos.
 import triagemRoutes from '#modules/triagem/triagem.routes.ts';
 import { analiseDocumentos, analises, analisesDoProjeto } from '#modules/analises/analises.routes.ts';
 import { apoio, apoioDoProjeto, downloadLocal } from '#modules/apoio/apoio.routes.ts';
+import artigoRoutes from '#modules/artigo/artigo.routes.ts';
 import { disposicao } from '#services/storage/disposicao.ts';
 
 const router = Router();
@@ -63,6 +64,7 @@ doProjeto.use('/revisoes', revisoesDoProjeto);
 doProjeto.use('/documentos', documentosDoProjeto);
 doProjeto.use('/referencias', referenciasRoutes); // referências do projeto em ABNT e APA
 doProjeto.use('/analises', analisesDoProjeto);
+doProjeto.use('/artigo', artigoRoutes); // gerador de artigo (rascunho e Word)
 doProjeto.use(apoioDoProjeto); // /temas, /categorias, /comentarios, /busca, /exportar
 router.use('/projetos/:id', projectAccess('projeto'), doProjeto);
 

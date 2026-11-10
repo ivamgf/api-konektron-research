@@ -7,7 +7,7 @@ test('divide o script do banco respeitando DELIMITER e aspas', () => {
   assert.ok(base.some((s) => s.startsWith('CREATE TABLE usuario')));
   assert.ok(base.some((s) => s.startsWith('CREATE OR REPLACE SQL SECURITY INVOKER VIEW vw_painel_etapas')));
   assert.ok(!base.some((s) => s.includes('START TRANSACTION')), 'dados de teste não entram na migração base');
-  assert.equal(base.filter((s) => s.startsWith('CREATE TABLE')).length, 47);
+  assert.equal(base.filter((s) => s.startsWith('CREATE TABLE')).length, 48);
 
   const teste = dividir(lerTrecho(MARCAS.teste, MARCAS.verificacao));
   assert.equal(teste[0], 'START TRANSACTION');
