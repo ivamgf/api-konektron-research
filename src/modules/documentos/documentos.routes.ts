@@ -100,7 +100,7 @@ documentosDoProjeto.get(
     const { page, pageSize, sort, q, ano, tipoDocumentoId, temaId, semRevisao } = req.validated.query;
     const query = db('documento as d')
       .where('d.projetoId', req.projeto!.id)
-      .select('d.id', 'd.titulo', 'd.autores', 'd.ano', 'd.periodico', 'd.doi', 'd.citacoes', 'd.tipoDocumentoId', 'd.arquivoId', 'd.resumo', 'd.palavrasChave', 'd.criadoEm', 'd.atualizadoEm')
+      .select('d.id', 'd.titulo', 'd.autores', 'd.ano', 'd.periodico', 'd.doi', 'd.link', 'd.citacoes', 'd.tipoDocumentoId', 'd.arquivoId', 'd.resumo', 'd.palavrasChave', 'd.criadoEm', 'd.atualizadoEm')
       .orderBy(sortBy(sort, ['titulo', 'ano', 'criadoEm', 'citacoes'], { column: 'criadoEm', order: 'desc' }).map((s) => ({ ...s, column: `d.${s.column}` })));
     // RF46: busca no índice FULLTEXT (título, resumo e palavras-chave)
     if (q) query.whereRaw('MATCH(d.titulo, d.resumo, d.palavras_chave) AGAINST (? IN BOOLEAN MODE)', [q.split(/\s+/).map((w: string) => `${w.replace(/[+\-<>()~*"@]/g, '')}*`).join(' ')]);

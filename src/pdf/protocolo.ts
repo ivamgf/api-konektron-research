@@ -13,7 +13,7 @@ export type DadosProtocolo = {
   revisoes: any[];
   versoes: any[];
   secoes?: string[] | null;
-  /** referências do projeto (ABNT e APA) */
+  /** referências do projeto (ABNT NBR 6023 e APA) */
   referencias?: { abnt: string | null; apa: string | null }[];
 };
 
@@ -80,13 +80,13 @@ ${p.aprovadoEm ? `<p>Aprovado por ${esc(p.aprovadoPorNome ?? 'orientador(a)')} e
 ${mostra('referencias') ? secaoReferencias(o.referencias ?? []) : ''}`;
 }
 
-/** 8. Referências: lista em ABNT (NBR 6023) e, quando houver, em APA (7ª ed.) */
+/** 8. Referências: lista em ABNT NBR 6023 e, quando houver, em APA (7ª ed.) */
 function secaoReferencias(refs: { abnt: string | null; apa: string | null }[]) {
   if (!refs.length) return '';
   const abnt = refs.map((r) => r.abnt).filter((x): x is string => !!x?.trim());
   const apa = refs.map((r) => r.apa).filter((x): x is string => !!x?.trim()).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const bloco = (itens: string[]) => itens.map((t) => `<p class="ref">${esc(t)}</p>`).join('');
   return `<h2>8. Referências</h2>
-${abnt.length ? `<h3>ABNT (NBR 6023)</h3>${bloco(abnt)}` : ''}
+${abnt.length ? `<h3>ABNT NBR 6023</h3>${bloco(abnt)}` : ''}
 ${apa.length ? `<h3>APA (7ª edição)</h3>${bloco(apa)}` : ''}`;
 }

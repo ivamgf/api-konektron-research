@@ -575,8 +575,12 @@ CREATE TABLE referencia (
   id             CHAR(36)     NOT NULL,
   projeto_id     CHAR(36)     NOT NULL,
   documento_id   CHAR(36)     COMMENT 'documento de origem, quando importada',
-  abnt           TEXT         COMMENT 'NBR 6023',
+  abnt           TEXT         COMMENT 'ABNT NBR 6023',
   apa            TEXT         COMMENT 'APA 7ª ed.',
+  mla            TEXT         COMMENT 'MLA 9ª ed.',
+  chicago        TEXT         COMMENT 'Chicago 17ª ed. (autor-data)',
+  vancouver      TEXT         COMMENT 'Vancouver (ICMJE)',
+  ieee           TEXT         COMMENT 'IEEE',
   observacao     VARCHAR(500),
   criado_por     CHAR(36),
   criado_em      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -587,7 +591,7 @@ CREATE TABLE referencia (
   CONSTRAINT fk_referencia_documento FOREIGN KEY (documento_id) REFERENCES documento(id) ON DELETE SET NULL,
   CONSTRAINT fk_referencia_criado_por FOREIGN KEY (criado_por) REFERENCES usuario(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC
-  COMMENT='Referências do projeto em ABNT e APA';
+  COMMENT='Referências do projeto em ABNT NBR 6023, APA, MLA, Chicago, Vancouver e IEEE';
 
 CREATE TABLE tema (
   id          CHAR(36)     NOT NULL,
