@@ -15,6 +15,7 @@ const router = Router();
 
 const projetoSchema = z.object({
   titulo: z.string().trim().min(3).max(300),
+  subtitulo: optText(300),
   area: optText(150),
   instituicao: optText(200),
   programa: optText(200),

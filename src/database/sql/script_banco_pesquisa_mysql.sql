@@ -67,7 +67,7 @@ ALTER DATABASE CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 --   documento_tema, tema, documento, busca, revisao_etapa, revisao, etapa_modelo, tipo_revisao,
 --   diretriz_relato, checklist_item_modelo, checklist_modelo, criterio, questao_analise,
 --   string_busca, descritor, palavra_chave, objetivo_especifico, protocolo_outra_questao,
---   protocolo_versao, protocolo, tipo_documento, idioma, base_dados, convite, projeto_membro,
+--   artigo, protocolo_versao, protocolo, tipo_documento, idioma, base_dados, convite, projeto_membro,
 --   projeto, arquivo, refresh_token, usuario;
 -- SET FOREIGN_KEY_CHECKS = 1;
 
@@ -143,6 +143,7 @@ CREATE TABLE arquivo (
 CREATE TABLE projeto (
   id             CHAR(36)     NOT NULL,
   titulo         VARCHAR(300) NOT NULL,
+  subtitulo      VARCHAR(300),
   area           VARCHAR(150),
   instituicao    VARCHAR(200),
   programa       VARCHAR(200),
@@ -261,6 +262,17 @@ CREATE TABLE protocolo_resumo (
   CONSTRAINT fk_protocolo_resumo_idioma FOREIGN KEY (idioma_id) REFERENCES idioma(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC
   COMMENT='Resumo do protocolo por idioma';
+
+CREATE TABLE artigo (
+  projeto_id      CHAR(36)     NOT NULL,
+  dados           JSON         NOT NULL COMMENT 'rascunho do artigo: textos e escolhas de cada seção',
+  atualizado_por  CHAR(36),
+  atualizado_em   DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (projeto_id),
+  CONSTRAINT fk_artigo_projeto FOREIGN KEY (projeto_id) REFERENCES projeto(id) ON DELETE CASCADE,
+  CONSTRAINT fk_artigo_atualizado_por FOREIGN KEY (atualizado_por) REFERENCES usuario(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC
+  COMMENT='Rascunho do artigo gerado a partir do projeto (um por projeto)';
 
 CREATE TABLE protocolo_versao (
   id              CHAR(36)     NOT NULL,
