@@ -11,9 +11,10 @@ let ultimaLimpeza = 0;
 let laco: Promise<void> | undefined;
 
 async function ciclo() {
-  // limpeza da lixeira uma vez a cada 6 h (RN17)
+  // planos (Free e assinaturas) e limpeza da lixeira uma vez a cada 6 h (RN17)
   if (Date.now() - ultimaLimpeza > 6 * 3_600_000) {
     ultimaLimpeza = Date.now();
+    await enfileirar('planos', {});
     await enfileirar('limpar-lixeira', {});
   }
   const t = await reservar();

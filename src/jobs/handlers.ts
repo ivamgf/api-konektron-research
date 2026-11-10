@@ -8,6 +8,8 @@ import { storage } from '#services/storage/index.ts';
 import { notificar } from '#services/notificacoes.ts';
 import { htmlParaPdf, esc, ESTILO } from '#pdf/render.ts';
 import { htmlParaDocx, MIME_DOCX } from '#pdf/docx.ts';
+import { expirarPlanosFree } from '#modules/planos/planos.service.ts';
+import { processarEvento, verificarAssinaturas } from '#modules/planos/assinaturas.ts';
 
 type FormatoDocumento = 'pdf' | 'docx';
 /** Mesmo HTML em PDF (padrão) ou em Word (.docx) */
@@ -406,4 +408,8 @@ export const handlers: Record<string, Handler> = {
   'exportar-analise': exportarAnalise,
   'relatorio-revisao': relatorioRevisao,
   'limpar-lixeira': async () => limparLixeira(),
+  // planos: avisos e expiração do Free; assinaturas em atraso ou canceladas voltam ao Free
+  planos: async () => ({ free: await expirarPlanosFree(), assinaturas: await verificarAssinaturas() }),
+  // eventos do webhook do Asaas (pagamento confirmado, atrasado, estornado; assinatura cancelada)
+  'asaas-evento': async (t) => processarEvento(String(t.payload.eventoId)),
 };

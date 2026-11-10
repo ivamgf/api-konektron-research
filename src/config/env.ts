@@ -73,6 +73,16 @@ const schema = z.object({
   WORKER_POLL_MS: z.coerce.number().int().min(250).default(2000),
   // true: o web também processa a fila (dispensa o dyno worker)
   WORKER_EMBUTIDO: flag,
+
+  // Asaas (assinaturas dos planos). Sem ASAAS_API_KEY a cobrança fica desligada e o app oferece o contato por e-mail.
+  ASAAS_API_URL: z.url().default('https://api-sandbox.asaas.com/v3'),
+  ASAAS_API_KEY: optional,
+  ASAAS_WEBHOOK_TOKEN: optional,
+  ASAAS_WALLET_ID: optional,
+  // proxy SOCKS de IP fixo para a lista de IPs autorizados do Asaas (no Heroku, o do Fixie Socks)
+  ASAAS_PROXY: optional,
+  // dias de tolerância depois do vencimento antes de voltar ao plano Free
+  ASAAS_TOLERANCIA_DIAS: z.coerce.number().int().min(0).max(60).default(5),
 });
 
 const parsed = schema.safeParse(process.env);

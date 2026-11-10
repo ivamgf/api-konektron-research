@@ -10,6 +10,7 @@ import { dateStr, idParams, optText } from '#shared/schemas.ts';
 import { auditar } from '#services/audit.ts';
 import { enviarEmail } from '#services/mailer.ts';
 import { notificar } from '#services/notificacoes.ts';
+import { conferirVagaDeMembro, recursosDoProjeto, reservarVagaDeProjeto } from '#modules/planos/planos.service.ts';
 
 const router = Router();
 
@@ -52,11 +53,13 @@ router.get('/', validate({ query: z.object({ status: z.enum(['ATIVO', 'ARQUIVADO
   res.json(await q);
 });
 
-// RF05: cria o projeto com o criador como responsável e o protocolo em rascunho (RN01)
+// RF05: cria o projeto com o criador como responsável e o protocolo em rascunho (RN01); o plano FREE
+// limita a quantidade de projetos
 router.post('/', validate({ body: projetoSchema }), async (req, res) => {
   conferirDatas(req.validated.body);
   const id = uuid();
   await db.transaction(async (trx) => {
+    await reservarVagaDeProjeto(req.user!.id, trx);
     await trx('projeto').insert({ ...req.validated.body, id, criadoPor: req.user!.id });
     await trx('projetoMembro').insert({ projetoId: id, usuarioId: req.user!.id, papel: 'RESPONSAVEL', aceitoEm: new Date() });
     await trx('protocolo').insert({ id: uuid(), projetoId: id });
@@ -82,7 +85,8 @@ router.post('/convites/aceitar', validate({ body: z.object({ token: z.string().m
 
 router.get('/:id', projectAccess('projeto'), async (req, res) => {
   const protocolo = await db('protocolo').where({ projetoId: req.projeto!.id }).first('id', 'status', 'versaoAtual', 'passoAtual');
-  res.json({ ...req.projeto, papel: req.papel, protocolo });
+  // recursos do plano de quem criou o projeto: o app desabilita as abas e funções que não estão incluídas
+  res.json({ ...req.projeto, papel: req.papel, protocolo, recursos: await recursosDoProjeto(req.projeto!) });
 });
 
 router.patch(
@@ -142,6 +146,7 @@ router.post(
       .whereNotNull('pm.aceitoEm')
       .first('u.id');
     if (jaMembro) throw AppError.conflict('Esta pessoa já é membro do projeto');
+    await conferirVagaDeMembro(req.projeto!, email);
 
     const token = generateOpaqueToken();
     const id = uuid();

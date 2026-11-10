@@ -69,6 +69,9 @@
     },
     {
       "name": "Projetos"
+    },
+    {
+      "name": "Outros"
     }
   ],
   "paths": {
@@ -185,6 +188,20 @@
                       "ADMIN",
                       "USUARIO"
                     ]
+                  },
+                  "plano": {
+                    "type": "string",
+                    "enum": [
+                      "FREE",
+                      "STANDARD",
+                      "MASTER"
+                    ]
+                  },
+                  "planoVitalicio": {
+                    "type": "boolean"
+                  },
+                  "descontoEstudante": {
+                    "type": "boolean"
                   }
                 }
               }
@@ -4256,6 +4273,22 @@
         }
       }
     },
+    "/me/plano": {
+      "get": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "getMePlano",
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          }
+        }
+      }
+    },
     "/me/senha": {
       "put": {
         "tags": [
@@ -4370,6 +4403,95 @@
             "$ref": "#/components/responses/Erro"
           },
           "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        }
+      }
+    },
+    "/planos/assinar": {
+      "post": {
+        "tags": [
+          "Outros"
+        ],
+        "operationId": "postPlanosAssinar",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "plano": {
+                    "type": "string",
+                    "enum": [
+                      "STANDARD",
+                      "MASTER"
+                    ]
+                  },
+                  "ciclo": {
+                    "type": "string",
+                    "enum": [
+                      "MENSAL",
+                      "ANUAL"
+                    ]
+                  },
+                  "cpfCnpj": {
+                    "type": "string",
+                    "maxLength": 20
+                  }
+                },
+                "required": [
+                  "plano",
+                  "ciclo",
+                  "cpfCnpj"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Criado"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        }
+      }
+    },
+    "/planos/assinatura": {
+      "get": {
+        "tags": [
+          "Outros"
+        ],
+        "operationId": "getPlanosAssinatura",
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          }
+        }
+      }
+    },
+    "/planos/cancelar": {
+      "post": {
+        "tags": [
+          "Outros"
+        ],
+        "operationId": "postPlanosCancelar",
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
             "$ref": "#/components/responses/Erro"
           }
         }
@@ -13212,6 +13334,20 @@
           },
           "422": {
             "$ref": "#/components/responses/Erro"
+          }
+        }
+      }
+    },
+    "/webhooks/asaas": {
+      "post": {
+        "tags": [
+          "Outros"
+        ],
+        "operationId": "postWebhooksAsaas",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Sucesso"
           }
         }
       }

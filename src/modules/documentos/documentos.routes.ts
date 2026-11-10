@@ -12,6 +12,7 @@ import { longText, optText, paginar, pagination, sortBy } from '#shared/schemas.
 import { salvarArquivo, urlDoArquivo } from '#services/arquivos.ts';
 import { auditar } from '#services/audit.ts';
 import { enfileirar } from '#services/fila.ts';
+import { conferirEspaco } from '#modules/planos/planos.service.ts';
 import { completarMetadados } from '#services/metadados.ts';
 
 /** Busca na web os campos em branco do documento e grava só o que estava vazio */
@@ -182,6 +183,7 @@ const uploadPdf = multer({
 documentos.post('/:id/arquivo', requirePapel(...EDITA), uploadPdf.single('arquivo'), async (req, res) => {
   if (!req.file) throw AppError.unprocessable('Envie um arquivo PDF no campo "arquivo"');
   const id = String(req.params.id);
+  await conferirEspaco(req.projeto!, req.file.size); // espaço do plano do dono do projeto
   const arquivoId = await salvarArquivo({
     projetoId: req.projeto!.id,
     chave: `projetos/${req.projeto!.id}/documentos/${id}/${uuid()}.pdf`,
