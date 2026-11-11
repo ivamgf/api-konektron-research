@@ -115,8 +115,15 @@ async function rebaixar(usuarioId: string, motivo: string) {
 export const planosRoutes = Router();
 
 // Assinatura atual, faturas e preços (com o desconto estudantil, se houver)
+/** Admin e contas vitalícias nunca são cobradas */
+export const isentoDeCobranca = (
+  u: { perfilGlobal?: string; planoVitalicio?: boolean } | undefined,
+) => !!u && (u.perfilGlobal === 'ADMIN' || !!u.planoVitalicio);
+
 planosRoutes.get('/assinatura', async (req, res) => {
-  const u = await db('usuario').where({ id: req.user!.id }).first('cpfCnpj', 'descontoEstudante');
+  const u = await db('usuario')
+    .where({ id: req.user!.id })
+    .first('cpfCnpj', 'descontoEstudante', 'perfilGlobal', 'planoVitalicio');
   const assinatura =
     (await assinaturaAberta(req.user!.id)) ??
     (await db('assinatura').where({ usuarioId: req.user!.id }).orderBy('criadoEm', 'desc').first());
@@ -135,6 +142,7 @@ planosRoutes.get('/assinatura', async (req, res) => {
   );
   res.json({
     cobrancaAtiva: asaasLigado(),
+    isento: isentoDeCobranca(u),
     sandbox: env.ASAAS_API_URL.includes('sandbox'),
     cpfCnpj: u?.cpfCnpj ?? null,
     descontoEstudante: !!u?.descontoEstudante,
@@ -167,6 +175,13 @@ planosRoutes.post(
         'ASAAS_DESLIGADO',
       );
     const u = await db('usuario').where({ id: req.user!.id }).first();
+    if (isentoDeCobranca(u))
+      throw new AppError(
+        'Sua conta já tem o plano Master sem cobrança e não pode ser assinada.',
+        409,
+        undefined,
+        'PLANO_ISENTO',
+      );
     const valor = valorDoPlano(plano, ciclo, !!u.descontoEstudante);
 
     try {
