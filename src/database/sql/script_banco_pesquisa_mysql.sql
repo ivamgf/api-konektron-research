@@ -93,6 +93,14 @@ CREATE TABLE usuario (
   instituicao           VARCHAR(200),
   orcid                 VARCHAR(19)   COMMENT 'formato 0000-0000-0000-000X',
   perfil_global         ENUM('ADMIN','USUARIO') NOT NULL DEFAULT 'USUARIO',
+  plano                 ENUM('FREE','STANDARD','MASTER') NOT NULL DEFAULT 'FREE',
+  plano_vitalicio       TINYINT(1)    NOT NULL DEFAULT 0 COMMENT 'opção interna: sem cobrança e sem prazo',
+  plano_limite_em       DATETIME(3)   COMMENT 'FREE: quando chegou ao limite de projetos (início dos 3 meses)',
+  plano_bloqueado_em    DATETIME(3)   COMMENT 'FREE: fim dos 3 meses; projetos removidos e acesso só ao upgrade',
+  plano_aviso_dias      TINYINT       COMMENT 'último aviso de expiração enviado (30 ou 7 dias antes)',
+  cpf_cnpj              VARCHAR(14)   COMMENT 'só dígitos; exigido pelo Asaas para cobrar',
+  asaas_cliente_id      VARCHAR(40),
+  desconto_estudante    TINYINT(1)    NOT NULL DEFAULT 0 COMMENT 'opção interna: 20% no Standard',
   preferencias          JSON          NOT NULL COMMENT 'objeto; a API grava {} no cadastro',
   ativo                 TINYINT(1)    NOT NULL DEFAULT 1,
   email_verificado_em   DATETIME(3),
@@ -575,8 +583,12 @@ CREATE TABLE referencia (
   id             CHAR(36)     NOT NULL,
   projeto_id     CHAR(36)     NOT NULL,
   documento_id   CHAR(36)     COMMENT 'documento de origem, quando importada',
-  abnt           TEXT         COMMENT 'NBR 6023',
+  abnt           TEXT         COMMENT 'ABNT NBR 6023',
   apa            TEXT         COMMENT 'APA 7ª ed.',
+  mla            TEXT         COMMENT 'MLA 9ª ed.',
+  chicago        TEXT         COMMENT 'Chicago 17ª ed. (autor-data)',
+  vancouver      TEXT         COMMENT 'Vancouver (ICMJE)',
+  ieee           TEXT         COMMENT 'IEEE',
   observacao     VARCHAR(500),
   criado_por     CHAR(36),
   criado_em      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -587,7 +599,55 @@ CREATE TABLE referencia (
   CONSTRAINT fk_referencia_documento FOREIGN KEY (documento_id) REFERENCES documento(id) ON DELETE SET NULL,
   CONSTRAINT fk_referencia_criado_por FOREIGN KEY (criado_por) REFERENCES usuario(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC
-  COMMENT='Referências do projeto em ABNT e APA';
+  COMMENT='Referências do projeto em ABNT NBR 6023, APA, MLA, Chicago, Vancouver e IEEE';
+
+CREATE TABLE assinatura (
+  id                   CHAR(36)      NOT NULL,
+  usuario_id           CHAR(36)      NOT NULL,
+  plano                ENUM('STANDARD','MASTER') NOT NULL,
+  ciclo                ENUM('MENSAL','ANUAL') NOT NULL,
+  valor                DECIMAL(10,2) NOT NULL,
+  asaas_assinatura_id  VARCHAR(40),
+  status               ENUM('PENDENTE','ATIVA','ATRASADA','CANCELADA') NOT NULL DEFAULT 'PENDENTE',
+  pago_ate             DATETIME(3)   COMMENT 'fim do período já pago',
+  cancelada_em         DATETIME(3),
+  criado_em            DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  atualizado_em        DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_assinatura_asaas (asaas_assinatura_id),
+  KEY ix_assinatura_usuario (usuario_id, status),
+  CONSTRAINT fk_assinatura_usuario FOREIGN KEY (usuario_id) REFERENCES usuario(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC
+  COMMENT='Assinaturas dos planos pagos no Asaas';
+
+CREATE TABLE pagamento (
+  id                   CHAR(36)      NOT NULL,
+  assinatura_id        CHAR(36),
+  asaas_pagamento_id   VARCHAR(40)   NOT NULL,
+  valor                DECIMAL(10,2) NOT NULL,
+  status               VARCHAR(40)   NOT NULL COMMENT 'status do Asaas: PENDING, CONFIRMED, RECEIVED, OVERDUE...',
+  forma                VARCHAR(20)   COMMENT 'BOLETO, PIX, CREDIT_CARD, UNDEFINED',
+  vencimento           DATE          NOT NULL,
+  pago_em              DATETIME(3),
+  link_fatura          VARCHAR(500),
+  criado_em            DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  atualizado_em        DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_pagamento_asaas (asaas_pagamento_id),
+  CONSTRAINT fk_pagamento_assinatura FOREIGN KEY (assinatura_id) REFERENCES assinatura(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC
+  COMMENT='Cobranças das assinaturas (espelho do Asaas)';
+
+CREATE TABLE webhook_evento (
+  id             VARCHAR(60)   NOT NULL COMMENT 'id do evento no Asaas',
+  tipo           VARCHAR(60)   NOT NULL,
+  payload        JSON          NOT NULL,
+  recebido_em    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  processado_em  DATETIME(3),
+  erro           VARCHAR(500),
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC
+  COMMENT='Eventos recebidos do webhook do Asaas (idempotência)';
 
 CREATE TABLE tema (
   id          CHAR(36)     NOT NULL,

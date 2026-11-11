@@ -6,6 +6,7 @@ import { validate } from '#middlewares/validate.ts';
 import { AppError } from '#utils/AppError.ts';
 import { BCRYPT_CUSTO, usuarioPublico } from '#modules/auth/auth.service.ts';
 import { trocarSenhaSchema } from '#modules/auth/auth.schemas.ts';
+import { resumoPlano } from '#modules/planos/planos.service.ts';
 
 const router = Router();
 
@@ -31,6 +32,11 @@ router.get('/', async (req, res) => {
   const u = await db('usuario').where({ id: req.user!.id }).first();
   if (!u) throw AppError.notFound('Usuário');
   res.json(usuarioPublico(u));
+});
+
+// Plano do usuário: limite e uso de projetos, recursos, prazo do plano gratuito e bloqueio
+router.get('/plano', async (req, res) => {
+  res.json(await resumoPlano(req.user!.id));
 });
 
 router.patch('/', validate({ body: perfilSchema }), async (req, res) => {

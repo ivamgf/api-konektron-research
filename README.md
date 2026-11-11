@@ -61,7 +61,7 @@ Autenticação com `Authorization: Bearer <accessToken>`. Erros no formato `{ "e
 | Grupo | Rotas principais | ERS |
 | --- | --- | --- |
 | Autenticação | `POST /auth/registrar`, `/auth/confirmar-email`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/esqueci-senha`, `/auth/redefinir-senha` | RF01, RF02 |
-| Perfil | `GET/PATCH /me`, `PUT /me/senha`, `GET /me/dados`, `DELETE /me` (LGPD) | RF04, RNF07 |
+| Perfil | `GET/PATCH /me`, `GET /me/plano`, `PUT /me/senha`, `GET /me/dados`, `DELETE /me` (LGPD) | RF04, RNF07 |
 | Administração | `GET /admin/usuarios`, `PATCH /admin/usuarios/:id` | RF03 |
 | Catálogos | `/bases-dados`, `/idiomas`, `/tipos-documento`, `/diretrizes`, `/checklists`, `/checklists/:id/itens` | RF19, RF20, UC14 |
 | Projetos | `GET/POST /projetos`, `GET/PATCH/DELETE /projetos/:id`, `POST /projetos/:id/restaurar`, `/projetos/:id/membros`, `POST /projetos/convites/aceitar`, `GET /projetos/:id/auditoria` | RF05, RF06, RF44, RN17 |
@@ -76,6 +76,19 @@ Autenticação com `Authorization: Bearer <accessToken>`. Erros no formato `{ "e
 | Análises | `GET/POST /projetos/:id/analises`, `/analises/:id`, `/analises/:id/documentos`, `PUT /analises/:id/documentos/:docId/respostas`, `/analise-documentos/:id/matriz`, `/analise-documentos/:id/discussao`, `GET /analises/:id/questoes/:qId/comparativo` | RF36–RF40 |
 | Relatórios | `POST /analises/:id/exportar`, `POST /projetos/:id/exportar`, `POST /revisoes/:id/relatorio`, `GET /tarefas/:id` | RF41–RF43 |
 | Apoio | `/projetos/:id/temas`, `/categorias`, `/comentarios`, `GET /projetos/:id/busca?q=`, `GET /notificacoes`, `POST /notificacoes/lidas`, `POST /sync` | RF45, RF46, ERS 9.4 |
+| Planos e cobrança | `GET /planos/assinatura`, `POST /planos/assinar`, `POST /planos/cancelar`, `POST /webhooks/asaas` (público, token do Asaas) | Planos |
+
+## Planos e cobrança (Asaas)
+
+- **Free**: até 3 projetos, 1 membro além do responsável, 500 MB de arquivos. Ao criar o 3º projeto começam 3 meses; no fim, os projetos vão para a lixeira (30 dias) e a conta fica bloqueada até o upgrade (o upgrade devolve os projetos).
+- **Standard** (R$ 49,90/mês ou R$ 499/ano): projetos ilimitados, aba Questões, 5 membros, 5 GB.
+- **Master** (R$ 99,90/mês ou R$ 999/ano): tudo (Análises, Artigo, TCLE, similaridade e verificação de termos), membros ilimitados, 20 GB. Administradores são sempre Master.
+- Opções internas (Administração › Usuários): **vitalício** (o plano não expira nem é cobrado) e **desconto estudantil** (20% no Standard).
+- Os recursos de um projeto seguem o plano de quem o criou. Regras em `src/modules/planos/planos.service.ts`.
+
+Cobrança: `POST /planos/assinar` cria o cliente e a assinatura no Asaas (Pix, boleto ou cartão, à escolha na fatura) e devolve o link da fatura. O Asaas avisa o pagamento em `POST /webhooks/asaas`; o evento é gravado em `webhook_evento` (idempotência) e processado no worker. Atraso além de `ASAAS_TOLERANCIA_DIAS` (5) ou assinatura cancelada com o período vencido voltam a conta para o Free.
+
+Configuração: `ASAAS_API_URL` (sandbox ou produção), `ASAAS_API_KEY`, `ASAAS_WEBHOOK_TOKEN` e, com a lista de IPs autorizados ligada no Asaas, `ASAAS_PROXY` (SOCKS de IP fixo; no Heroku, o do Fixie Socks). Depois do deploy, cadastre o webhook com `heroku run npm run asaas:webhook`.
 
 PDFs, importações e exportações rodam no worker: a rota responde `202` com `tarefaId` e o app consulta `GET /tarefas/:id` até `CONCLUIDA`, quando a resposta traz a URL assinada (15 min) do arquivo.
 

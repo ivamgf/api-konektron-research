@@ -5,26 +5,37 @@ import { validate } from '#middlewares/validate.ts';
 import { EDITA, requirePapel } from '#middlewares/projectAccess.ts';
 import { AppError } from '#utils/AppError.ts';
 import { uuid } from '#utils/tokens.ts';
-import { referenciaApa, referenciaNbr } from '#utils/referencias.ts';
+import { GERADORES, NORMAS, type Norma } from '#utils/referencias.ts';
 import { auditar } from '#services/audit.ts';
 
 /**
- * Referências do projeto (montado em /projetos/:id/referencias): cada uma com o texto em ABNT
- * (NBR 6023) e em APA (7ª ed.), cadastrada à mão ou trazida dos documentos do projeto.
+ * Referências do projeto (montado em /projetos/:id/referencias): cada uma com o texto em ABNT NBR 6023,
+ * APA (7ª ed.), MLA (9ª ed.), Chicago (17ª ed.), Vancouver e IEEE, cadastrada à mão ou trazida dos
+ * documentos do projeto.
  */
 const router = Router({ mergeParams: true });
 const edita = requirePapel(...EDITA);
 
 const texto = z.string().trim().max(10_000).nullable().optional();
-const campos = z.object({ abnt: texto, apa: texto, observacao: z.string().trim().max(500).nullable().optional() });
+const campos = z.object({
+  abnt: texto,
+  apa: texto,
+  mla: texto,
+  chicago: texto,
+  vancouver: texto,
+  ieee: texto,
+  observacao: z.string().trim().max(500).nullable().optional(),
+});
 const vazio = (v?: string | null) => !v?.trim();
+const algumaNorma = (r: Partial<Record<Norma, string | null>>) => NORMAS.some((n) => !vazio(r[n]));
+const MSG_NORMA = 'Informe a referência em pelo menos uma norma';
 
-/** Lista ordenada pela referência (ABNT; sem ela, APA), como numa lista de referências */
+/** Lista ordenada pela referência (ABNT; sem ela, APA e as demais), como numa lista de referências */
 export function referenciasDoProjeto(projetoId: string) {
   return db('referencia as r')
     .leftJoin('documento as d', 'd.id', 'r.documentoId')
     .where('r.projetoId', projetoId)
-    .orderByRaw('LOWER(COALESCE(r.abnt, r.apa))')
+    .orderByRaw('LOWER(COALESCE(r.abnt, r.apa, r.mla, r.chicago, r.vancouver, r.ieee))')
     .select('r.*', 'd.titulo as documentoTitulo');
 }
 
@@ -32,26 +43,22 @@ router.get('/', async (req, res) => {
   res.json(await referenciasDoProjeto(req.projeto!.id));
 });
 
-router.post(
-  '/',
-  edita,
-  validate({ body: campos.refine((b) => !vazio(b.abnt) || !vazio(b.apa), 'Informe a referência em ABNT, em APA ou nas duas') }),
-  async (req, res) => {
-    const id = uuid();
-    const b = req.validated.body;
-    await db('referencia').insert({
-      id,
-      projetoId: req.projeto!.id,
-      abnt: b.abnt?.trim() || null,
-      apa: b.apa?.trim() || null,
-      observacao: b.observacao?.trim() || null,
-      criadoPor: req.user!.id,
-    });
-    res.status(201).json(await db('referencia').where({ id }).first());
-  },
-);
+router.post('/', edita, validate({ body: campos.refine(algumaNorma, MSG_NORMA) }), async (req, res) => {
+  const id = uuid();
+  const b = req.validated.body;
+  const normas = Object.fromEntries(NORMAS.map((n) => [n, b[n]?.trim() || null]));
+  await db('referencia').insert({
+    id,
+    projetoId: req.projeto!.id,
+    ...normas,
+    observacao: b.observacao?.trim() || null,
+    criadoPor: req.user!.id,
+  });
+  res.status(201).json(await db('referencia').where({ id }).first());
+});
 
-// Traz as referências dos documentos do projeto (as do documento ou geradas dos metadados, RF27)
+// Traz as referências dos documentos do projeto (as do documento ou geradas dos metadados, RF27).
+// As que já estavam na lista ganham o texto das normas que ainda estão em branco.
 router.post(
   '/importar',
   edita,
@@ -72,22 +79,36 @@ router.post(
       q.whereExists(db('revisaoDocumento as rd').whereRaw('rd.documento_id = d.id').where('rd.situacao', 'INCLUIDO'));
     }
     const docs = await q;
-    const ja = new Set(
-      (await db('referencia').where({ projetoId: req.projeto!.id }).whereNotNull('documentoId').select('documentoId')).map((r: any) => r.documentoId),
+    const existentes = new Map<string, any>(
+      (await db('referencia').where({ projetoId: req.projeto!.id }).whereNotNull('documentoId')).map((r: any) => [r.documentoId, r]),
     );
+    const textoDoDoc = (d: any, n: Norma) =>
+      (n === 'abnt' ? d.refNbr?.trim() : n === 'apa' ? d.refApa?.trim() : '') || GERADORES[n](d);
+
     const novas = docs
-      .filter((d: any) => !ja.has(d.id))
+      .filter((d: any) => !existentes.has(d.id))
       .map((d: any) => ({
         id: uuid(),
         projetoId: req.projeto!.id,
         documentoId: d.id,
-        abnt: d.refNbr?.trim() || referenciaNbr(d),
-        apa: d.refApa?.trim() || referenciaApa(d),
+        ...Object.fromEntries(NORMAS.map((n) => [n, textoDoDoc(d, n)])),
         criadoPor: req.user!.id,
       }));
     for (let i = 0; i < novas.length; i += 500) await db('referencia').insert(novas.slice(i, i + 500));
-    if (novas.length) auditar({ req, entidade: 'referencia', entidadeId: req.projeto!.id, acao: 'CRIAR', depois: { fonte, importadas: novas.length } });
-    res.json({ importadas: novas.length, jaExistiam: docs.length - novas.length });
+
+    let completadas = 0;
+    for (const d of docs) {
+      const ref = existentes.get(d.id);
+      if (!ref) continue;
+      const faltam = Object.fromEntries(NORMAS.filter((n) => vazio(ref[n])).map((n) => [n, textoDoDoc(d, n)]));
+      if (!Object.keys(faltam).length) continue;
+      await db('referencia').where({ id: ref.id }).update(faltam);
+      completadas++;
+    }
+
+    if (novas.length || completadas)
+      auditar({ req, entidade: 'referencia', entidadeId: req.projeto!.id, acao: 'CRIAR', depois: { fonte, importadas: novas.length, completadas } });
+    res.json({ importadas: novas.length, jaExistiam: docs.length - novas.length, completadas });
   },
 );
 
@@ -97,10 +118,8 @@ router.patch('/:refId', edita, validate({ params: z.object({ refId: z.guid() }).
   if (!atual) throw AppError.notFound('Referência');
   const b = req.validated.body;
   const dados: Record<string, string | null> = {};
-  for (const k of ['abnt', 'apa', 'observacao'] as const) if (b[k] !== undefined) dados[k] = b[k]?.trim() || null;
-  const abnt = 'abnt' in dados ? dados.abnt : atual.abnt;
-  const apa = 'apa' in dados ? dados.apa : atual.apa;
-  if (vazio(abnt) && vazio(apa)) throw AppError.unprocessable('A referência precisa ter o texto em ABNT ou em APA');
+  for (const k of [...NORMAS, 'observacao'] as const) if (b[k] !== undefined) dados[k] = b[k]?.trim() || null;
+  if (!algumaNorma({ ...atual, ...dados })) throw AppError.unprocessable(MSG_NORMA);
   if (Object.keys(dados).length) await db('referencia').where({ id: refId }).update(dados);
   res.json(await db('referencia').where({ id: refId }).first());
 });

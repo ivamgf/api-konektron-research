@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db, type Trx } from '#database/connection.ts';
 import { validate } from '#middlewares/validate.ts';
 import { DONO, EDITA, projectAccess, requirePapel } from '#middlewares/projectAccess.ts';
+import { exigeRecurso } from '#modules/planos/planos.service.ts';
 import { AppError } from '#utils/AppError.ts';
 import { uuid } from '#utils/tokens.ts';
 import { crudRouter } from '#shared/crud.ts';
@@ -132,7 +133,7 @@ async function detalhe(id: string) {
 
 // ------------------------------------------------ /analises/:id
 export const analises = Router();
-analises.use('/:id', projectAccess('analise'));
+analises.use('/:id', projectAccess('analise'), exigeRecurso('ANALISES'));
 
 analises.get('/:id', async (req, res) => {
   res.json(await detalhe(String(req.params.id)));
@@ -267,7 +268,7 @@ analises.post('/:id/exportar', validate({ body: z.object({ formato: z.enum(['xls
 // ------------------------------------------------ /analise-documentos/:id/matriz e /discussao
 export const analiseDocumentos = Router();
 // :adId (e não :id): os CRUDs abaixo também usam /:id e, com mergeParams, o do item sobrescreveria o do pai
-analiseDocumentos.use('/:adId', projectAccess('analiseDocumento', 'adId'));
+analiseDocumentos.use('/:adId', projectAccess('analiseDocumento', 'adId'), exigeRecurso('ANALISES'));
 
 analiseDocumentos.use(
   '/:adId/matriz',

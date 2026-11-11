@@ -17,6 +17,7 @@ import { contagensEtapa, copiarChecklist, elegiveis, instanciarEtapas, painel, r
 import { fluxogramaSvg } from './fluxograma.ts';
 import { dadosDiagrama, diagramaSvg } from './diagrama.ts';
 import { importarCsvDaEtapa } from './importarEtapa.ts';
+import { conferirEspaco } from '#modules/planos/planos.service.ts';
 import { detectarDuplicados } from '#modules/documentos/duplicados.ts';
 
 // ------------------------------------------------ /projetos/:id/revisoes
@@ -355,6 +356,7 @@ revisoes.post('/:id/buscas', requirePapel(...EDITA), upload.single('arquivo'), v
   if (req.file) {
     const ext = (req.file.originalname.split('.').pop() ?? 'txt').toLowerCase();
     if (!['ris', 'bib', 'bibtex', 'csv', 'txt', 'xlsx', 'nbib'].includes(ext)) throw AppError.unprocessable('Formato não suportado: envie RIS, BibTeX, CSV ou XLSX');
+    await conferirEspaco(req.projeto!, req.file.size); // espaço do plano do dono do projeto
     arquivoId = await salvarArquivo({
       projetoId: req.projeto!.id,
       chave: `projetos/${req.projeto!.id}/buscas/${id}.${ext}`,

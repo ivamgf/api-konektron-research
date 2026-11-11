@@ -20,6 +20,8 @@ import triagemRoutes from '#modules/triagem/triagem.routes.ts';
 import { analiseDocumentos, analises, analisesDoProjeto } from '#modules/analises/analises.routes.ts';
 import { apoio, apoioDoProjeto, downloadLocal } from '#modules/apoio/apoio.routes.ts';
 import artigoRoutes from '#modules/artigo/artigo.routes.ts';
+import { contaLiberada, exigeRecurso } from '#modules/planos/planos.service.ts';
+import { planosRoutes, webhookRoutes } from '#modules/planos/assinaturas.ts';
 import { disposicao } from '#services/storage/disposicao.ts';
 
 const router = Router();
@@ -50,21 +52,28 @@ router.get('/arquivos/download', validate({ query: z.object({ token: z.string().
   res.type(a.mimeType).send(a.dados);
 });
 
+// webhook do Asaas (autenticado pelo token no header asaas-access-token)
+router.use('/webhooks', webhookRoutes);
+
 // autenticadas
-router.use(authenticate, idempotency);
+router.use(authenticate, contaLiberada, idempotency);
 router.use('/me', meRoutes);
+router.use('/planos', planosRoutes); // assinatura dos planos pelo Asaas
 router.use('/admin/usuarios', requireAdmin, usuariosRoutes);
 router.use('/', catalogosRoutes); // /bases-dados, /idiomas, /tipos-documento, /diretrizes, /checklists
 router.use('/tipos-revisao', tiposRevisaoRoutes);
 
 router.use('/projetos', projetosRoutes);
 const doProjeto = Router({ mergeParams: true });
+// recursos que dependem do plano do dono do projeto (Master)
+doProjeto.use('/questoes', exigeRecurso('QUESTOES'));
+doProjeto.use('/protocolo/tcle', exigeRecurso('TCLE'));
 doProjeto.use(protocoloRoutes); // /protocolo, /questoes, /criterios, /strings, /palavras-chave, /descritores...
 doProjeto.use('/revisoes', revisoesDoProjeto);
 doProjeto.use('/documentos', documentosDoProjeto);
 doProjeto.use('/referencias', referenciasRoutes); // referências do projeto em ABNT e APA
-doProjeto.use('/analises', analisesDoProjeto);
-doProjeto.use('/artigo', artigoRoutes); // gerador de artigo (rascunho e Word)
+doProjeto.use('/analises', exigeRecurso('ANALISES'), analisesDoProjeto);
+doProjeto.use('/artigo', exigeRecurso('ARTIGO'), artigoRoutes); // gerador de artigo (rascunho e Word)
 doProjeto.use(apoioDoProjeto); // /temas, /categorias, /comentarios, /busca, /exportar
 router.use('/projetos/:id', projectAccess('projeto'), doProjeto);
 

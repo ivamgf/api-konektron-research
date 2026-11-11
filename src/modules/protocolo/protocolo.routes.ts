@@ -15,6 +15,7 @@ import { salvarArquivo, urlDoArquivo } from '#services/arquivos.ts';
 import { compararSnapshots, marcarAlterado, pendencias, protocoloCompleto, protocoloDoProjeto } from './protocolo.service.ts';
 import { CODIGOS_METODOLOGIA, modeloTcle } from './tcle.ts';
 import { traduzir } from '#services/traducao.ts';
+import { conferirEspaco } from '#modules/planos/planos.service.ts';
 import { env } from '#config/env.ts';
 
 // Montado em /projetos/:id (projectAccess já aplicado no roteador pai)
@@ -230,6 +231,7 @@ router.post('/protocolo/tcle', ...edita, uploadTcle.single('arquivo'), async (re
   const ext = (req.file.originalname.split('.').pop() ?? '').toLowerCase();
   if (!EXT_TCLE.includes(ext)) throw AppError.unprocessable('Envie o TCLE em PDF, DOC, DOCX ou ODT');
   const p = await protocoloDoProjeto(req.projeto!.id);
+  await conferirEspaco(req.projeto!, req.file.size); // espaço do plano do dono do projeto
   const arquivoId = await salvarArquivo({
     projetoId: req.projeto!.id,
     chave: `projetos/${req.projeto!.id}/protocolo/tcle-${uuid()}.${ext}`,

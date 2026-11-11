@@ -14,7 +14,7 @@ test('PDF do protocolo traz as referências em ABNT e em APA (APA em ordem alfab
     ],
   });
   assert.match(html, /8\. Referências/);
-  assert.match(html, /ABNT \(NBR 6023\)[\s\S]*SILVA, A\. Título\. 2020\./);
+  assert.match(html, /ABNT NBR 6023[\s\S]*SILVA, A\. Título\. 2020\./);
   assert.ok(html.indexOf('Almeida, B.') < html.indexOf('Silva, A. (2020)'), 'APA em ordem alfabética');
   assert.ok(html.includes('Outro &amp; mais'), 'texto escapado');
 });
