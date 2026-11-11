@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cpfCnpjValido, hojeAsaas } from '../src/services/asaas.ts';
-import { fimDoPeriodo } from '../src/modules/planos/assinaturas.ts';
+import { fimDoPeriodo, isentoDeCobranca } from '../src/modules/planos/assinaturas.ts';
 import { REGRAS, valorDoPlano } from '../src/modules/planos/planos.service.ts';
 
 test('CPF e CNPJ com dígitos verificadores', () => {
@@ -43,4 +43,11 @@ test('período pago: mensal e anual contados do vencimento (horário de Brasíli
   assert.equal(fimDoPeriodo('2026-11-10', 'MENSAL').toISOString(), '2026-12-11T02:59:59.000Z');
   assert.equal(fimDoPeriodo('2026-11-10', 'ANUAL').toISOString(), '2027-11-11T02:59:59.000Z');
   assert.equal(hojeAsaas(new Date('2026-11-11T01:00:00Z')), '2026-11-10');
+});
+
+test('admin e contas vitalícias nunca são cobradas', () => {
+  assert.equal(isentoDeCobranca({ perfilGlobal: 'ADMIN', planoVitalicio: false }), true);
+  assert.equal(isentoDeCobranca({ perfilGlobal: 'USUARIO', planoVitalicio: true }), true);
+  assert.equal(isentoDeCobranca({ perfilGlobal: 'USUARIO', planoVitalicio: false }), false);
+  assert.equal(isentoDeCobranca(undefined), false);
 });
