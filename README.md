@@ -88,7 +88,7 @@ Autenticação com `Authorization: Bearer <accessToken>`. Erros no formato `{ "e
 
 Cobrança: `POST /planos/assinar` cria o cliente e a assinatura no Asaas (Pix, boleto ou cartão, à escolha na fatura) e devolve o link da fatura. O Asaas avisa o pagamento em `POST /webhooks/asaas`; o evento é gravado em `webhook_evento` (idempotência) e processado no worker. Atraso além de `ASAAS_TOLERANCIA_DIAS` (5) ou assinatura cancelada com o período vencido voltam a conta para o Free.
 
-Configuração: `ASAAS_API_URL` (sandbox ou produção), `ASAAS_API_KEY`, `ASAAS_WEBHOOK_TOKEN` e, com a lista de IPs autorizados ligada no Asaas, `ASAAS_PROXY` (SOCKS de IP fixo; no Heroku, o do Fixie Socks). Depois do deploy, cadastre o webhook com `heroku run npm run asaas:webhook`.
+Configuração: `ASAAS_API_URL` (sandbox ou produção), `ASAAS_API_KEY`, `ASAAS_WEBHOOK_TOKEN`, `ASAAS_WEBHOOK_EMAIL` (avisos de falha do webhook; padrão: o endereço de `MAIL_FROM`) e, opcionalmente, `ASAAS_PROXY` (SOCKS de IP fixo). O Heroku sai por IPs variáveis: sem proxy, a lista de IPs autorizados do Asaas precisa ficar desligada. Cadastre o webhook com `heroku run "npm run asaas:webhook" -a api-konektron-research`; com a lista de IPs ligada, rode-o de uma máquina autorizada: `API_URL=https://<api> node --env-file=.env scripts/asaas-webhook.ts`.
 
 PDFs, importações e exportações rodam no worker: a rota responde `202` com `tarefaId` e o app consulta `GET /tarefas/:id` até `CONCLUIDA`, quando a resposta traz a URL assinada (15 min) do arquivo.
 
