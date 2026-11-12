@@ -25,6 +25,8 @@ import { dadosDiagrama, diagramaSvg } from '#modules/revisoes/diagrama.ts';
 import { referenciasDoProjeto } from '#modules/referencias/referencias.routes.ts';
 import { detectarDuplicados } from '#modules/documentos/duplicados.ts';
 import { completarDocumento } from '#modules/documentos/documentos.routes.ts';
+import { dadosRelatorio } from '#modules/relatorio/relatorio.service.ts';
+import { htmlRelatorio } from '#modules/relatorio/relatorio.html.ts';
 import { lerArquivoDeBusca } from './parsers.ts';
 import type { Tarefa } from '#services/fila.ts';
 
@@ -343,6 +345,27 @@ const gerarPdfProjeto: Handler = async (t) => {
   return { arquivoId };
 };
 
+// ------------------------------------------------ relatorio-pesquisa: template do relatório de pesquisa
+const relatorioPesquisa: Handler = async (t) => {
+  const { projetoId, revisaoId, opcoes } = t.payload;
+  const d = await dadosRelatorio(projetoId, revisaoId ?? null);
+  const doc = await gerarDocumento(
+    htmlRelatorio(d, opcoes ?? undefined),
+    `Relatório de pesquisa · ${esc(d.projeto.titulo).slice(0, 60)}`,
+    t.payload.formato === 'docx' ? 'docx' : 'pdf',
+  );
+  const arquivoId = await salvarArquivo({
+    projetoId,
+    chave: `projetos/${projetoId}/relatorios/pesquisa-${carimbo()}.${doc.ext}`,
+    nomeOriginal: `relatorio_pesquisa.${doc.ext}`,
+    mimeType: doc.mime,
+    dados: doc.dados,
+    criadoPor: t.payload.usuarioId ?? null,
+  });
+  await salvarResultado(t, { arquivoId });
+  return { arquivoId };
+};
+
 // ------------------------------------------------ limpar-lixeira (RN17: 30 dias)
 export async function limparLixeira() {
   const limite = new Date(Date.now() - 30 * 86_400_000);
@@ -407,6 +430,7 @@ export const handlers: Record<string, Handler> = {
   'exportar-projeto': exportarProjeto,
   'exportar-analise': exportarAnalise,
   'relatorio-revisao': relatorioRevisao,
+  'relatorio-pesquisa': relatorioPesquisa,
   'limpar-lixeira': async () => limparLixeira(),
   // planos: avisos e expiração do Free; assinaturas em atraso ou canceladas voltam ao Free
   planos: async () => ({ free: await expirarPlanosFree(), assinaturas: await verificarAssinaturas() }),

@@ -6316,6 +6316,178 @@
         ]
       }
     },
+    "/projetos/{id}/cronograma": {
+      "get": {
+        "tags": [
+          "Projetos"
+        ],
+        "operationId": "getProjetosByidCronograma",
+        "description": "Requer ser membro do projeto (qualquer papel).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Projetos"
+        ],
+        "operationId": "putProjetosByidCronograma",
+        "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dados": {
+                    "type": "object",
+                    "properties": {
+                      "granularidade": {
+                        "type": "string",
+                        "enum": [
+                          "MENSAL",
+                          "BIMESTRAL",
+                          "TRIMESTRAL",
+                          "QUADRIMESTRAL",
+                          "SEMESTRAL",
+                          "ANUAL"
+                        ]
+                      },
+                      "anoInicio": {
+                        "type": "integer",
+                        "minimum": 1950,
+                        "maximum": 2200
+                      },
+                      "anoFim": {
+                        "type": "integer",
+                        "minimum": 1950,
+                        "maximum": 2200
+                      },
+                      "ocultarVazias": {
+                        "type": "boolean"
+                      },
+                      "etapas": {
+                        "maxItems": 100,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64
+                            },
+                            "nome": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "origem": {
+                              "type": "string",
+                              "enum": [
+                                "REVISAO",
+                                "PESQUISA",
+                                "LIVRE"
+                              ]
+                            },
+                            "revisaoEtapaId": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 36
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "meses": {
+                              "maxItems": 252,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "nome",
+                            "origem",
+                            "meses"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "granularidade",
+                      "anoInicio",
+                      "anoFim",
+                      "etapas"
+                    ]
+                  }
+                },
+                "required": [
+                  "dados"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        },
+        "x-papeis": [
+          "RESPONSAVEL",
+          "COLABORADOR"
+        ]
+      }
+    },
     "/projetos/{id}/descritores": {
       "get": {
         "tags": [
@@ -10084,6 +10256,480 @@
           "RESPONSAVEL",
           "COLABORADOR"
         ]
+      }
+    },
+    "/projetos/{id}/relatorio": {
+      "get": {
+        "tags": [
+          "Projetos"
+        ],
+        "operationId": "getProjetosByidRelatorio",
+        "description": "Requer ser membro do projeto (qualquer papel).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          },
+          {
+            "name": "revisaoId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Projetos"
+        ],
+        "operationId": "putProjetosByidRelatorio",
+        "description": "Papéis no projeto: RESPONSAVEL, COLABORADOR (o administrador sempre passa).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dados": {
+                    "type": "object",
+                    "properties": {
+                      "revisaoId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "opcoes": {
+                        "type": "object",
+                        "properties": {
+                          "secoes": {
+                            "maxItems": 16,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "identificacao",
+                                "resumo",
+                                "introducao",
+                                "metodo",
+                                "cronograma",
+                                "resultados",
+                                "caracterizacao",
+                                "analise",
+                                "sintese",
+                                "checklist",
+                                "consideracoes",
+                                "referencias",
+                                "apendiceA",
+                                "apendiceB",
+                                "apendiceC",
+                                "apendiceD"
+                              ]
+                            }
+                          },
+                          "norma": {
+                            "type": "string",
+                            "enum": [
+                              "ABNT",
+                              "APA"
+                            ]
+                          },
+                          "orientacoes": {
+                            "type": "boolean"
+                          },
+                          "capa": {
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      "textos": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "maxLength": 36
+                        },
+                        "additionalProperties": {
+                          "type": "object",
+                          "properties": {
+                            "resumoAchados": {
+                              "type": "string",
+                              "maxLength": 50000
+                            },
+                            "resumoConclusao": {
+                              "type": "string",
+                              "maxLength": 50000
+                            },
+                            "introducao": {
+                              "type": "string",
+                              "maxLength": 50000
+                            },
+                            "metodoSintese": {
+                              "type": "string",
+                              "maxLength": 50000
+                            },
+                            "distribuicao": {
+                              "type": "string",
+                              "maxLength": 50000
+                            },
+                            "sintese": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string",
+                                "maxLength": 20
+                              },
+                              "additionalProperties": {
+                                "type": "string",
+                                "maxLength": 50000
+                              }
+                            },
+                            "discussaoFechamento": {
+                              "type": "string",
+                              "maxLength": 50000
+                            },
+                            "consideracoes": {
+                              "type": "string",
+                              "maxLength": 50000
+                            },
+                            "limitacoes": {
+                              "type": "string",
+                              "maxLength": 50000
+                            },
+                            "trabalhosFuturos": {
+                              "type": "string",
+                              "maxLength": 50000
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "dados"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        },
+        "x-papeis": [
+          "RESPONSAVEL",
+          "COLABORADOR"
+        ]
+      }
+    },
+    "/projetos/{id}/relatorio/gerar": {
+      "post": {
+        "tags": [
+          "Projetos"
+        ],
+        "operationId": "postProjetosByidRelatorioGerar",
+        "description": "Requer ser membro do projeto (qualquer papel).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revisaoId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "formato": {
+                    "type": "string",
+                    "enum": [
+                      "pdf",
+                      "docx"
+                    ]
+                  },
+                  "opcoes": {
+                    "type": "object",
+                    "properties": {
+                      "secoes": {
+                        "maxItems": 16,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "identificacao",
+                            "resumo",
+                            "introducao",
+                            "metodo",
+                            "cronograma",
+                            "resultados",
+                            "caracterizacao",
+                            "analise",
+                            "sintese",
+                            "checklist",
+                            "consideracoes",
+                            "referencias",
+                            "apendiceA",
+                            "apendiceB",
+                            "apendiceC",
+                            "apendiceD"
+                          ]
+                        }
+                      },
+                      "norma": {
+                        "type": "string",
+                        "enum": [
+                          "ABNT",
+                          "APA"
+                        ]
+                      },
+                      "orientacoes": {
+                        "type": "boolean"
+                      },
+                      "capa": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Aceito: tarefa enfileirada no worker; acompanhe em GET /tarefas/{id}"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        }
+      }
+    },
+    "/projetos/{id}/relatorio/previa": {
+      "post": {
+        "tags": [
+          "Projetos"
+        ],
+        "operationId": "postProjetosByidRelatorioPrevia",
+        "description": "Requer ser membro do projeto (qualquer papel).",
+        "parameters": [
+          {
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": "id"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revisaoId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "opcoes": {
+                    "type": "object",
+                    "properties": {
+                      "secoes": {
+                        "maxItems": 16,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "identificacao",
+                            "resumo",
+                            "introducao",
+                            "metodo",
+                            "cronograma",
+                            "resultados",
+                            "caracterizacao",
+                            "analise",
+                            "sintese",
+                            "checklist",
+                            "consideracoes",
+                            "referencias",
+                            "apendiceA",
+                            "apendiceB",
+                            "apendiceC",
+                            "apendiceD"
+                          ]
+                        }
+                      },
+                      "norma": {
+                        "type": "string",
+                        "enum": [
+                          "ABNT",
+                          "APA"
+                        ]
+                      },
+                      "orientacoes": {
+                        "type": "boolean"
+                      },
+                      "capa": {
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  "textos": {
+                    "type": "object",
+                    "properties": {
+                      "resumoAchados": {
+                        "type": "string",
+                        "maxLength": 50000
+                      },
+                      "resumoConclusao": {
+                        "type": "string",
+                        "maxLength": 50000
+                      },
+                      "introducao": {
+                        "type": "string",
+                        "maxLength": 50000
+                      },
+                      "metodoSintese": {
+                        "type": "string",
+                        "maxLength": 50000
+                      },
+                      "distribuicao": {
+                        "type": "string",
+                        "maxLength": 50000
+                      },
+                      "sintese": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "maxLength": 20
+                        },
+                        "additionalProperties": {
+                          "type": "string",
+                          "maxLength": 50000
+                        }
+                      },
+                      "discussaoFechamento": {
+                        "type": "string",
+                        "maxLength": 50000
+                      },
+                      "consideracoes": {
+                        "type": "string",
+                        "maxLength": 50000
+                      },
+                      "limitacoes": {
+                        "type": "string",
+                        "maxLength": 50000
+                      },
+                      "trabalhosFuturos": {
+                        "type": "string",
+                        "maxLength": 50000
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        }
       }
     },
     "/projetos/{id}/restaurar": {
