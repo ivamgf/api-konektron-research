@@ -132,3 +132,20 @@ test('planilha Referencial Teórico (revisão anterior): Tipo, Referências, cit
   assert.equal(linhas[2].refNbr, 'HEATH, Tom; BIZER, Christian. Linked data.');
   assert.equal(linhas[2].ano, null);
 });
+
+test('substituir: documentos de importações anteriores fora do novo arquivo (DOI ou título)', async () => {
+  const { documentosForaDoArquivo, MODOS_IMPORTACAO } = await import('#modules/revisoes/importarEtapa.ts');
+  const { normalizarTitulo } = await import('#utils/normalize.ts');
+  const candidatos = [
+    { rdId: 'a', doi: '10.1/ABC', tituloNormalizado: normalizarTitulo('Primeiro artigo') },
+    { rdId: 'b', doi: null, tituloNormalizado: normalizarTitulo('Segundo artigo') },
+    { rdId: 'c', doi: '10.1/zzz', tituloNormalizado: normalizarTitulo('Terceiro artigo') },
+  ];
+  const linhas = [
+    { doi: 'https://doi.org/10.1/abc', titulo: 'Outro título do primeiro' },
+    { doi: null, titulo: 'SEGUNDO artigo.' },
+  ];
+  assert.deepEqual(documentosForaDoArquivo(candidatos, linhas), ['c']);
+  assert.deepEqual(documentosForaDoArquivo(candidatos, []), ['a', 'b', 'c']);
+  assert.deepEqual([...MODOS_IMPORTACAO], ['ADICIONAR', 'SUBSTITUIR_BASES', 'SUBSTITUIR']);
+});

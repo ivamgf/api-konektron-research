@@ -56,7 +56,43 @@ export type Relatorio = {
   temasCriados?: number;
   /** documentos marcados como revisão anterior / integrados (entram incluídos, sem triagem) */
   outrasOrigens?: { revisaoAnterior: number; integrados: number };
+  /** modo substituir: documentos de importações CSV anteriores que não estão no novo arquivo e saíram da revisão */
+  documentosRemovidos?: number;
+  modo?: ModoImportacao;
   avisos: { linha: number; mensagem: string }[];
+};
+
+/**
+ * Como o arquivo convive com o que já foi importado (cada base costuma ter seu CSV: ieee.csv, pubmed.csv, scielo.csv…):
+ * - ADICIONAR: soma documentos novos e atualiza a decisão dos que já existem; o resto fica como está;
+ * - SUBSTITUIR_BASES: o arquivo substitui o que veio antes das mesmas bases (ex.: um scielo.csv corrigido);
+ * - SUBSTITUIR: o arquivo substitui tudo o que as importações CSV anteriores registraram.
+ * Na etapa de entrada (busca, deduplicação ou primeira triagem) os documentos que não estão no arquivo saem
+ * da revisão; nas triagens seguintes (F2, F3…) só as decisões da etapa são apagadas — os documentos vêm da fase anterior.
+ */
+export const MODOS_IMPORTACAO = ['ADICIONAR', 'SUBSTITUIR_BASES', 'SUBSTITUIR'] as const;
+export type ModoImportacao = (typeof MODOS_IMPORTACAO)[number];
+
+/** Documentos de importações anteriores que não aparecem no novo arquivo (casados por DOI ou título normalizado) */
+export function documentosForaDoArquivo(
+  candidatos: { rdId: string; doi: string | null; tituloNormalizado: string | null }[],
+  linhas: { doi?: string | null; titulo: string }[],
+): string[] {
+  const dois = new Set(linhas.map((l) => limparDoi(l.doi)?.toLowerCase()).filter(Boolean));
+  const titulos = new Set(linhas.map((l) => normalizarTitulo(l.titulo)).filter(Boolean));
+  return candidatos
+    .filter((c) => !(c.doi && dois.has(c.doi.toLowerCase())) && !(c.tituloNormalizado && titulos.has(c.tituloNormalizado)))
+    .map((c) => c.rdId);
+}
+
+const lerJson = (v: unknown): Record<string, unknown> => {
+  if (!v) return {};
+  if (typeof v === 'object') return v as Record<string, unknown>;
+  try {
+    return JSON.parse(String(v));
+  } catch {
+    return {};
+  }
 };
 
 const semAcento = (s: string) => s.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -330,7 +366,9 @@ export async function importarCsvDaEtapa(o: {
   usuarioId: string;
   nomeArquivo: string;
   texto: string;
-  substituir: boolean;
+  /** legado: true equivale a modo SUBSTITUIR */
+  substituir?: boolean;
+  modo?: ModoImportacao;
   /** só calcula o relatório e desfaz tudo (pré-visualização) */
   simular?: boolean;
   /**
@@ -411,17 +449,6 @@ async function importar(
       });
     const anteriores = etapas.filter((e: any) => e.exigeTriagem && alvo && e.ordem < alvo.ordem);
 
-    // ---- documentos: casa por DOI / título com a revisão e o projeto
-    const daRevisao = await trx('revisaoDocumento as rd')
-      .join('documento as d', 'd.id', 'rd.documentoId')
-      .where('rd.revisaoId', o.revisaoId)
-      .select('rd.id as rdId', 'rd.origem', 'd.id', 'd.doi', 'd.tituloNormalizado');
-    const doProjeto = await trx('documento')
-      .where({ projetoId: o.projetoId })
-      .select('id', 'doi', 'tituloNormalizado');
-    const naRevisao = new Indice(daRevisao);
-    const noProjeto = new Indice(doProjeto);
-
     const bases = await trx('baseDados').select('id', 'nome', 'sigla');
     const baseDe = (nome: string | null) => {
       const s = nome ? semAcento(nome) : '';
@@ -431,6 +458,71 @@ async function importar(
         bases[0]
       );
     };
+
+    // ---- modo: adicionar, substituir as bases do arquivo ou substituir tudo
+    const modo: ModoImportacao = o.modo ?? (o.substituir ? 'SUBSTITUIR' : 'ADICIONAR');
+    // bases das linhas de busca do arquivo (revisão anterior e integrados não têm base)
+    const basesDoArquivo = new Set<string>(
+      linhas
+        .filter((l) => (l.origem ?? o.origem ?? 'BUSCA') === 'BUSCA')
+        .map((l) => baseDe(l.base)?.id)
+        .filter(Boolean),
+    );
+    // etapa de entrada: os documentos entram na revisão por ela (busca, deduplicação ou primeira triagem)
+    const entrada =
+      etapa.categoria !== 'INCLUSAO' && !etapas.some((e: any) => e.exigeTriagem && e.ordem < etapa.ordem);
+    let documentosRemovidos = 0;
+    if (modo !== 'ADICIONAR' && entrada) {
+      const buscasCsv = (
+        await trx('busca').where({ revisaoId: o.revisaoId }).select('id', 'baseDadosId', 'logImportacao')
+      ).filter(
+        (b: any) =>
+          lerJson(b.logImportacao).origem === 'csv-etapa' &&
+          (modo === 'SUBSTITUIR' || basesDoArquivo.has(b.baseDadosId)),
+      );
+      const idsBuscas = buscasCsv.map((b: any) => b.id as string);
+      if (idsBuscas.length) {
+        const candidatos: { rdId: string; doi: string | null; tituloNormalizado: string | null }[] = [];
+        for (const lote of emLotes(idsBuscas))
+          candidatos.push(
+            ...(await trx('revisaoDocumento as rd')
+              .join('documento as d', 'd.id', 'rd.documentoId')
+              .where('rd.revisaoId', o.revisaoId)
+              .where('rd.origem', 'BUSCA')
+              .whereIn('rd.buscaId', lote)
+              .select('rd.id as rdId', 'd.doi', 'd.tituloNormalizado')),
+          );
+        const remover = documentosForaDoArquivo(candidatos, linhas);
+        // decisões e resultados de triagem saem junto (ON DELETE CASCADE)
+        for (const lote of emLotes(remover)) await trx('revisaoDocumento').whereIn('id', lote).del();
+        documentosRemovidos = remover.length;
+        // importações anteriores que ficaram vazias
+        for (const lote of emLotes(idsBuscas))
+          await trx('busca')
+            .whereIn('id', lote)
+            .whereNotExists(trx('revisaoDocumento as x').whereRaw('x.busca_id = busca.id'))
+            .del();
+      }
+      if (documentosRemovidos)
+        avisos.push({
+          linha: 1,
+          mensagem: `${documentosRemovidos} documento(s) de importações anteriores ${
+            modo === 'SUBSTITUIR' ? '' : 'das mesmas bases '
+          }não estão neste arquivo e saíram da revisão`,
+        });
+    }
+
+    // ---- documentos: casa por DOI / título com a revisão e o projeto
+    const daRevisao = await trx('revisaoDocumento as rd')
+      .join('documento as d', 'd.id', 'rd.documentoId')
+      .where('rd.revisaoId', o.revisaoId)
+      .select('rd.id as rdId', 'rd.origem', 'rd.buscaId', 'd.id', 'd.doi', 'd.tituloNormalizado');
+    const doProjeto = await trx('documento')
+      .where({ projetoId: o.projetoId })
+      .select('id', 'doi', 'tituloNormalizado');
+    const naRevisao = new Indice(daRevisao);
+    const noProjeto = new Indice(doProjeto);
+
     const etapaBusca = etapas.find((e: any) => e.categoria === 'BUSCA');
     const buscas = new Map<string, { id: string; novos: number; total: number }>();
     const buscaDa = async (base: any) => {
@@ -489,6 +581,8 @@ async function importar(
       documentosDaRevisao: 0,
       decisoes: { selecionados: 0, excluidos: 0, semDecisao: 0 },
       selecionadosEmEtapasAnteriores: 0,
+      documentosRemovidos,
+      modo,
       avisos,
     };
     const porRd = new Map<string, Linha>(); // última linha de cada documento (linhas repetidas: vale a última)
@@ -615,7 +709,7 @@ async function importar(
     // ---- decisões
     const rdIds = [...porRd.keys()].filter((id) => !especiais.has(id));
     if (alvo) {
-      if (o.substituir) {
+      if (modo === 'SUBSTITUIR') {
         await trx('triagemDecisao').where({ revisaoEtapaId: alvo.id }).del();
         const antigos = (
           await trx('triagemResultado')
@@ -624,6 +718,21 @@ async function importar(
         ).map((r: any) => r.revisaoDocumentoId);
         await trx('triagemResultado').where({ revisaoEtapaId: alvo.id }).del();
         rdIds.push(...antigos.filter((id: string) => !porRd.has(id)));
+      } else if (modo === 'SUBSTITUIR_BASES' && basesDoArquivo.size) {
+        // só as decisões desta etapa dos documentos das bases do arquivo
+        const antigos = (
+          await trx('triagemResultado as tr')
+            .join('revisaoDocumento as rd', 'rd.id', 'tr.revisaoDocumentoId')
+            .join('busca as b', 'b.id', 'rd.buscaId')
+            .where('tr.revisaoEtapaId', alvo.id)
+            .whereIn('b.baseDadosId', [...basesDoArquivo])
+            .select('tr.revisaoDocumentoId')
+        ).map((r: any) => r.revisaoDocumentoId as string);
+        for (const lote of emLotes(antigos)) {
+          await trx('triagemDecisao').where({ revisaoEtapaId: alvo.id }).whereIn('revisaoDocumentoId', lote).del();
+          await trx('triagemResultado').where({ revisaoEtapaId: alvo.id }).whereIn('revisaoDocumentoId', lote).del();
+        }
+        rdIds.push(...antigos.filter((id) => !porRd.has(id)));
       }
       const criterios = await trx('criterio as c')
         .join('protocolo as p', 'p.id', 'c.protocoloId')
