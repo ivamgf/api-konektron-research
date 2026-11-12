@@ -4273,6 +4273,54 @@
         }
       }
     },
+    "/me/email": {
+      "put": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "putMeEmail",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "format": "email"
+                  },
+                  "senhaAtual": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "email",
+                  "senhaAtual"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sucesso"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "409": {
+            "$ref": "#/components/responses/Erro"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro"
+          }
+        }
+      }
+    },
     "/me/plano": {
       "get": {
         "tags": [
@@ -12821,6 +12869,14 @@
                     "enum": [
                       "true",
                       "false"
+                    ]
+                  },
+                  "modo": {
+                    "type": "string",
+                    "enum": [
+                      "ADICIONAR",
+                      "SUBSTITUIR_BASES",
+                      "SUBSTITUIR"
                     ]
                   },
                   "simular": {

@@ -16,7 +16,7 @@ import { eSistematico } from '#modules/tipos-revisao/tiposRevisao.service.ts';
 import { contagensEtapa, copiarChecklist, elegiveis, instanciarEtapas, painel, recalcularSituacao, reconsolidarRevisao, resolverAguardando } from './revisoes.service.ts';
 import { fluxogramaSvg } from './fluxograma.ts';
 import { dadosDiagrama, diagramaSvg } from './diagrama.ts';
-import { importarCsvDaEtapa } from './importarEtapa.ts';
+import { importarCsvDaEtapa, MODOS_IMPORTACAO } from './importarEtapa.ts';
 import { conferirEspaco } from '#modules/planos/planos.service.ts';
 import { detectarDuplicados } from '#modules/documentos/duplicados.ts';
 
@@ -288,7 +288,7 @@ revisoes.post(
   '/:id/etapas/:etapaId/importar',
   requirePapel(...EDITA),
   uploadCsv.single('arquivo'),
-  validate({ body: z.object({ substituir: z.enum(['true', 'false']).optional(), simular: z.enum(['true', 'false']).optional(), iniciar: z.enum(['true', 'false']).optional(), origem: z.enum(['BUSCA', 'REVISAO_ANTERIOR', 'INTEGRADO']).optional() }) }),
+  validate({ body: z.object({ substituir: z.enum(['true', 'false']).optional(), modo: z.enum(MODOS_IMPORTACAO).optional(), simular: z.enum(['true', 'false']).optional(), iniciar: z.enum(['true', 'false']).optional(), origem: z.enum(['BUSCA', 'REVISAO_ANTERIOR', 'INTEGRADO']).optional() }) }),
   async (req, res) => {
     if (!req.file) throw AppError.unprocessable('Envie o arquivo CSV no campo "arquivo"');
     const ext = (req.file.originalname.split('.').pop() ?? '').toLowerCase();
@@ -302,6 +302,7 @@ revisoes.post(
       nomeArquivo: req.file.originalname,
       texto: req.file.buffer.toString('utf8'),
       substituir: req.validated.body.substituir === 'true',
+      modo: req.validated.body.modo,
       simular: req.validated.body.simular === 'true',
       iniciar: req.validated.body.iniciar === 'true',
       origem: req.validated.body.origem,

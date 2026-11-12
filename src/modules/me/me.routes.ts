@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { db, json } from '#database/connection.ts';
 import { validate } from '#middlewares/validate.ts';
 import { AppError } from '#utils/AppError.ts';
-import { BCRYPT_CUSTO, usuarioPublico } from '#modules/auth/auth.service.ts';
+import { BCRYPT_CUSTO, enviarConfirmacao, usuarioPublico } from '#modules/auth/auth.service.ts';
 import { trocarSenhaSchema } from '#modules/auth/auth.schemas.ts';
 import { resumoPlano } from '#modules/planos/planos.service.ts';
 
@@ -55,6 +55,27 @@ router.put('/senha', validate({ body: trocarSenhaSchema }), async (req, res) => 
   }
   await db('usuario').where({ id: u.id }).update({ senhaHash: await bcrypt.hash(req.validated.body.novaSenha, BCRYPT_CUSTO) });
   res.status(204).end();
+});
+
+// Troca do e-mail de acesso: exige a senha atual; o novo e-mail precisa ser confirmado de novo
+const trocarEmailSchema = z.object({
+  email: z.email().max(255).transform((e) => e.toLowerCase()),
+  senhaAtual: z.string().min(1).max(200),
+});
+router.put('/email', validate({ body: trocarEmailSchema }), async (req, res) => {
+  const { email, senhaAtual } = req.validated.body;
+  const u = await db('usuario').where({ id: req.user!.id }).first();
+  if (!(await bcrypt.compare(senhaAtual, u.senhaHash))) {
+    throw AppError.unprocessable('Senha atual incorreta', undefined, 'SENHA_INCORRETA');
+  }
+  if (email !== u.email) {
+    if (await db('usuario').where({ email }).whereNot({ id: u.id }).first('id')) {
+      throw AppError.conflict('Já existe uma conta com este e-mail');
+    }
+    await db('usuario').where({ id: u.id }).update({ email, emailVerificadoEm: null });
+    await enviarConfirmacao(u.id);
+  }
+  res.json(usuarioPublico(await db('usuario').where({ id: u.id }).first()));
 });
 
 // RNF07 (LGPD): exportação dos dados pessoais
