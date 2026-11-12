@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cpfCnpjValido, hojeAsaas } from '../src/services/asaas.ts';
-import { fimDoPeriodo, isentoDeCobranca } from '../src/modules/planos/assinaturas.ts';
+import { assinaturaDoEvento, fimDoPeriodo, isentoDeCobranca } from '../src/modules/planos/assinaturas.ts';
 import { REGRAS, valorDoPlano } from '../src/modules/planos/planos.service.ts';
 
 test('CPF e CNPJ com dígitos verificadores', () => {
@@ -50,4 +50,11 @@ test('admin e contas vitalícias nunca são cobradas', () => {
   assert.equal(isentoDeCobranca({ perfilGlobal: 'USUARIO', planoVitalicio: true }), true);
   assert.equal(isentoDeCobranca({ perfilGlobal: 'USUARIO', planoVitalicio: false }), false);
   assert.equal(isentoDeCobranca(undefined), false);
+});
+
+test('webhook: identifica a assinatura do aviso (avisos sem assinatura são de outros usos da conta)', () => {
+  assert.equal(assinaturaDoEvento({ event: 'PAYMENT_RECEIVED', payment: { id: 'pay_1', subscription: 'sub_1' } }), 'sub_1');
+  assert.equal(assinaturaDoEvento({ event: 'SUBSCRIPTION_DELETED', subscription: { id: 'sub_2' } }), 'sub_2');
+  assert.equal(assinaturaDoEvento({ event: 'PAYMENT_RECEIVED', payment: { id: 'pay_avulso' } }), null);
+  assert.equal(assinaturaDoEvento({}), null);
 });

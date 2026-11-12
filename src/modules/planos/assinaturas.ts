@@ -283,12 +283,28 @@ const tokenConfere = (recebido: string | undefined) => {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 };
 
+/**
+ * Assinatura do Asaas a que o aviso se refere. A conta Asaas é compartilhada com outros sistemas (ex.: KonekTron):
+ * avisos sem assinatura ou de assinaturas que não são do Research são ignorados sem gravar nada.
+ */
+export function assinaturaDoEvento(corpo: any): string | null {
+  const evento = String(corpo?.event ?? '');
+  const id = corpo?.payment?.subscription ?? (evento.startsWith('SUBSCRIPTION_') ? corpo?.subscription?.id : null);
+  return id ? String(id) : null;
+}
+
 webhookRoutes.post('/asaas', async (req, res) => {
   if (!tokenConfere(req.get('asaas-access-token'))) {
     throw new AppError('Token do webhook inválido', 401, undefined, 'WEBHOOK_TOKEN');
   }
   const { id, event } = (req.body ?? {}) as { id?: string; event?: string };
   if (!id || !event) throw AppError.unprocessable('Evento sem id ou tipo');
+  const remota = assinaturaDoEvento(req.body);
+  const nossa = remota ? await db('assinatura').where({ asaasAssinaturaId: remota }).first('id') : null;
+  if (!nossa) {
+    res.json({ recebido: true, ignorado: true }); // de outro sistema na mesma conta Asaas
+    return;
+  }
   // entrega "pelo menos uma vez": o mesmo id não é processado duas vezes
   const ja = await db('webhookEvento')
     .where({ id: String(id).slice(0, 60) })
@@ -345,8 +361,8 @@ async function aplicarEvento(tipo: string, payload: any, agora: Date) {
   const assin = p.subscription
     ? await db('assinatura').where({ asaasAssinaturaId: p.subscription }).first()
     : null;
-  await salvarPagamento(p, assin?.id ?? null);
-  if (!assin) return;
+  if (!assin) return; // cobrança de outro sistema na mesma conta Asaas: não é gravada
+  await salvarPagamento(p, assin.id);
 
   if (tipo === 'PAYMENT_CONFIRMED' || tipo === 'PAYMENT_RECEIVED' || PAGO.includes(p.status)) {
     const fim = fimDoPeriodo(p.dueDate, assin.ciclo);
