@@ -20,6 +20,7 @@ import triagemRoutes from '#modules/triagem/triagem.routes.ts';
 import { analiseDocumentos, analises, analisesDoProjeto } from '#modules/analises/analises.routes.ts';
 import { apoio, apoioDoProjeto, downloadLocal } from '#modules/apoio/apoio.routes.ts';
 import artigoRoutes from '#modules/artigo/artigo.routes.ts';
+import { cronogramaRoutes, relatorioRoutes } from '#modules/relatorio/relatorio.routes.ts';
 import { contaLiberada, exigeRecurso } from '#modules/planos/planos.service.ts';
 import { planosRoutes, webhookRoutes } from '#modules/planos/assinaturas.ts';
 import { disposicao } from '#services/storage/disposicao.ts';
@@ -74,6 +75,8 @@ doProjeto.use('/documentos', documentosDoProjeto);
 doProjeto.use('/referencias', referenciasRoutes); // referências do projeto em ABNT e APA
 doProjeto.use('/analises', exigeRecurso('ANALISES'), analisesDoProjeto);
 doProjeto.use('/artigo', exigeRecurso('ARTIGO'), artigoRoutes); // gerador de artigo (rascunho e Word)
+doProjeto.use('/cronograma', cronogramaRoutes); // cronograma das etapas (mensal a anual)
+doProjeto.use('/relatorio', relatorioRoutes); // relatório de pesquisa (prévia, PDF e Word)
 doProjeto.use(apoioDoProjeto); // /temas, /categorias, /comentarios, /busca, /exportar
 router.use('/projetos/:id', projectAccess('projeto'), doProjeto);
 

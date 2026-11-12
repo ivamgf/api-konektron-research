@@ -75,6 +75,7 @@ Autenticação com `Authorization: Bearer <accessToken>`. Erros no formato `{ "e
 | Painel e checklist | `GET /revisoes/:id/painel`, `GET /revisoes/:id/fluxograma?formato=svg`, `GET/PATCH /revisoes/:id/checklist` | RF32, RF33, RF35 |
 | Análises | `GET/POST /projetos/:id/analises`, `/analises/:id`, `/analises/:id/documentos`, `PUT /analises/:id/documentos/:docId/respostas`, `/analise-documentos/:id/matriz`, `/analise-documentos/:id/discussao`, `GET /analises/:id/questoes/:qId/comparativo` | RF36–RF40 |
 | Relatórios | `POST /analises/:id/exportar`, `POST /projetos/:id/exportar`, `POST /revisoes/:id/relatorio`, `GET /tarefas/:id` | RF41–RF43 |
+| Cronograma e relatório de pesquisa | `GET/PUT /projetos/:id/cronograma` (etapas × períodos mensal a anual, marcados por mês), `GET/PUT /projetos/:id/relatorio` (rascunho com textos por revisão), `POST .../relatorio/previa` (HTML), `POST .../relatorio/gerar` (PDF ou DOCX no worker, fila `relatorio-pesquisa`) | — |
 | Apoio | `/projetos/:id/temas`, `/categorias`, `/comentarios`, `GET /projetos/:id/busca?q=`, `GET /notificacoes`, `POST /notificacoes/lidas`, `POST /sync` | RF45, RF46, ERS 9.4 |
 | Planos e cobrança | `GET /planos/assinatura`, `POST /planos/assinar`, `POST /planos/cancelar`, `POST /webhooks/asaas` (público, token do Asaas) | Planos |
 

@@ -67,7 +67,7 @@ ALTER DATABASE CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 --   documento_tema, tema, documento, busca, revisao_etapa, revisao, etapa_modelo, tipo_revisao,
 --   diretriz_relato, checklist_item_modelo, checklist_modelo, criterio, questao_analise,
 --   string_busca, descritor, palavra_chave, objetivo_especifico, protocolo_outra_questao,
---   artigo, protocolo_versao, protocolo, tipo_documento, idioma, base_dados, convite, projeto_membro,
+--   relatorio, cronograma, artigo, protocolo_versao, protocolo, tipo_documento, idioma, base_dados, convite, projeto_membro,
 --   projeto, arquivo, refresh_token, usuario;
 -- SET FOREIGN_KEY_CHECKS = 1;
 
@@ -281,6 +281,28 @@ CREATE TABLE artigo (
   CONSTRAINT fk_artigo_atualizado_por FOREIGN KEY (atualizado_por) REFERENCES usuario(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC
   COMMENT='Rascunho do artigo gerado a partir do projeto (um por projeto)';
+
+CREATE TABLE cronograma (
+  projeto_id      CHAR(36)     NOT NULL,
+  dados           JSON         NOT NULL COMMENT 'granularidade, anos e etapas com os meses de execução',
+  atualizado_por  CHAR(36),
+  atualizado_em   DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (projeto_id),
+  CONSTRAINT fk_cronograma_projeto FOREIGN KEY (projeto_id) REFERENCES projeto(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cronograma_atualizado_por FOREIGN KEY (atualizado_por) REFERENCES usuario(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC
+  COMMENT='Cronograma das etapas da pesquisa (um por projeto)';
+
+CREATE TABLE relatorio (
+  projeto_id      CHAR(36)     NOT NULL,
+  dados           JSON         NOT NULL COMMENT 'revisão escolhida, opções e textos do pesquisador por revisão',
+  atualizado_por  CHAR(36),
+  atualizado_em   DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (projeto_id),
+  CONSTRAINT fk_relatorio_projeto FOREIGN KEY (projeto_id) REFERENCES projeto(id) ON DELETE CASCADE,
+  CONSTRAINT fk_relatorio_atualizado_por FOREIGN KEY (atualizado_por) REFERENCES usuario(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC
+  COMMENT='Rascunho do relatório de pesquisa (um por projeto)';
 
 CREATE TABLE protocolo_versao (
   id              CHAR(36)     NOT NULL,
