@@ -12,6 +12,7 @@ import { notificar } from '#services/notificacoes.ts';
  * - FREE: até 3 projetos. Ao criar o 3º, começam a contar 3 meses; no fim deles os projetos do usuário vão
  *   para a lixeira (removidos de vez 30 dias depois) e a conta fica bloqueada até o upgrade.
  * - STANDARD: projetos ilimitados, com a aba Questões e sem os demais recursos avançados.
+ * - Cronograma e relatório de pesquisa: liberados em todos os planos (não são recurso de plano).
  * - Limites por plano: membros por projeto (além do responsável) e espaço para arquivos enviados.
  * - MASTER: tudo liberado. Administradores são sempre MASTER.
  * - Vitalício (opção interna, só o administrador vê): o plano escolhido não expira nem é cobrado.
@@ -64,7 +65,7 @@ export type PlanoPago = Exclude<Plano, 'FREE'>;
 /** Preços em reais (anual = 10 mensalidades) */
 export const PRECOS: Record<PlanoPago, Record<Ciclo, number>> = {
   STANDARD: { MENSAL: 49.9, ANUAL: 499 },
-  MASTER: { MENSAL: 99.9, ANUAL: 999 },
+  MASTER: { MENSAL: 79.9, ANUAL: 799 },
 };
 /** Desconto estudantil (opção interna marcada pelo administrador): só no Standard */
 export const DESCONTO_ESTUDANTE = 0.2;

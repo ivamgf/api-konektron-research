@@ -15,10 +15,10 @@ test('CPF e CNPJ com dígitos verificadores', () => {
 
 test('preços: anual = 10 mensalidades; desconto estudantil de 20% só no Standard', () => {
   assert.equal(valorDoPlano('STANDARD', 'MENSAL'), 49.9);
-  assert.equal(valorDoPlano('MASTER', 'ANUAL'), 999);
+  assert.equal(valorDoPlano('MASTER', 'ANUAL'), 799);
   assert.equal(valorDoPlano('STANDARD', 'MENSAL', true), 39.92);
   assert.equal(valorDoPlano('STANDARD', 'ANUAL', true), 399.2);
-  assert.equal(valorDoPlano('MASTER', 'MENSAL', true), 99.9);
+  assert.equal(valorDoPlano('MASTER', 'MENSAL', true), 79.9);
 });
 
 test('limites: membros e espaço por plano; Questões no Free e no Standard', () => {
