@@ -83,7 +83,7 @@ Autenticação com `Authorization: Bearer <accessToken>`. Erros no formato `{ "e
 
 - **Free**: até 3 projetos, 1 membro além do responsável, 500 MB de arquivos. Ao criar o 3º projeto começam 3 meses; no fim, os projetos vão para a lixeira (30 dias) e a conta fica bloqueada até o upgrade (o upgrade devolve os projetos).
 - **Standard** (R$ 49,90/mês ou R$ 499/ano): projetos ilimitados, aba Questões, 5 membros, 5 GB.
-- **Master** (R$ 99,90/mês ou R$ 999/ano): tudo (Análises, Artigo, TCLE, similaridade e verificação de termos), membros ilimitados, 20 GB. Administradores são sempre Master.
+- **Master** (R$ 79,90/mês ou R$ 799/ano): tudo (Análises, Artigo, TCLE, similaridade e verificação de termos), membros ilimitados, 20 GB. Administradores são sempre Master.
 - Opções internas (Administração › Usuários): **vitalício** (o plano não expira nem é cobrado) e **desconto estudantil** (20% no Standard).
 - Os recursos de um projeto seguem o plano de quem o criou. Regras em `src/modules/planos/planos.service.ts`.
 
