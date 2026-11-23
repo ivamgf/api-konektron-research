@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  cortesiaAtiva,
   expiraEm,
   MESES_FREE,
   planoEfetivo,
@@ -40,4 +41,16 @@ test('Free expira 3 meses depois de atingir o limite; vitalício e planos pagos 
   assert.equal(expiraEm({ ...base, planoLimiteEm: limite, planoVitalicio: true }), null);
   assert.equal(expiraEm({ ...base, plano: 'STANDARD', planoLimiteEm: limite }), null);
   assert.equal(expiraEm({ ...base, perfilGlobal: 'ADMIN', planoLimiteEm: limite }), null);
+});
+
+test('cortesia vale até a data, só em plano pago', () => {
+  const agora = new Date('2026-11-23T12:00:00Z');
+  const ate = '2027-02-23T12:00:00Z';
+  assert.equal(cortesiaAtiva({ plano: 'MASTER', planoCortesiaAte: ate }, agora), true);
+  assert.equal(
+    cortesiaAtiva({ plano: 'MASTER', planoCortesiaAte: ate }, new Date('2027-02-23T12:00:01Z')),
+    false,
+  );
+  assert.equal(cortesiaAtiva({ plano: 'FREE', planoCortesiaAte: ate }, agora), false);
+  assert.equal(cortesiaAtiva({ plano: 'MASTER', planoCortesiaAte: null }, agora), false);
 });
