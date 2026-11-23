@@ -20,6 +20,7 @@ import {
 } from '#services/asaas.ts';
 import {
   CICLOS,
+  cortesiaAtiva,
   mudarPlano,
   PRECOS,
   somarMeses,
@@ -37,6 +38,7 @@ import {
  *    e processado no worker: pagamento confirmado libera o plano até o fim do período pago.
  * 3. Atraso além da tolerância (ASAAS_TOLERANCIA_DIAS) ou assinatura cancelada com o período vencido voltam
  *    a conta para o Free (tarefa periódica do worker). Contas "vitalício" nunca são rebaixadas.
+ * 4. Cortesia (opção interna): plano sem cobrança até `planoCortesiaAte`; no fim volta ao Free (expirarCortesias).
  */
 
 const NOME: Record<PlanoPago, string> = { STANDARD: 'Standard', MASTER: 'Master' };
@@ -89,11 +91,11 @@ const faturaEmAberto = (assinaturaId: string) =>
     .first('linkFatura', 'vencimento', 'valor');
 
 /** Volta a conta para o Free (fim do período pago ou atraso além da tolerância) */
-async function rebaixar(usuarioId: string, motivo: string) {
+async function rebaixar(usuarioId: string, motivo: string, agora = new Date()) {
   const u = await db('usuario')
     .where({ id: usuarioId })
-    .first('id', 'nome', 'email', 'plano', 'planoVitalicio');
-  if (!u || u.planoVitalicio || u.plano === 'FREE') return false;
+    .first('id', 'nome', 'email', 'plano', 'planoVitalicio', 'planoCortesiaAte');
+  if (!u || u.planoVitalicio || u.plano === 'FREE' || cortesiaAtiva(u, agora)) return false;
   const outraAtiva = await db('assinatura')
     .where({ usuarioId, status: 'ATIVA' })
     .where('pagoAte', '>', new Date())
@@ -115,15 +117,30 @@ async function rebaixar(usuarioId: string, motivo: string) {
 export const planosRoutes = Router();
 
 // Assinatura atual, faturas e preços (com o desconto estudantil, se houver)
-/** Admin e contas vitalícias nunca são cobradas */
+/** Admin, contas vitalícias e cortesias em vigor não são cobradas */
 export const isentoDeCobranca = (
-  u: { perfilGlobal?: string; planoVitalicio?: boolean } | undefined,
-) => !!u && (u.perfilGlobal === 'ADMIN' || !!u.planoVitalicio);
+  u:
+    | {
+        perfilGlobal?: string;
+        planoVitalicio?: boolean;
+        plano?: string;
+        planoCortesiaAte?: Date | string | null;
+      }
+    | undefined,
+  agora = new Date(),
+) => !!u && (u.perfilGlobal === 'ADMIN' || !!u.planoVitalicio || cortesiaAtiva(u, agora));
 
 planosRoutes.get('/assinatura', async (req, res) => {
   const u = await db('usuario')
     .where({ id: req.user!.id })
-    .first('cpfCnpj', 'descontoEstudante', 'perfilGlobal', 'planoVitalicio');
+    .first(
+      'cpfCnpj',
+      'descontoEstudante',
+      'perfilGlobal',
+      'plano',
+      'planoVitalicio',
+      'planoCortesiaAte',
+    );
   const assinatura =
     (await assinaturaAberta(req.user!.id)) ??
     (await db('assinatura').where({ usuarioId: req.user!.id }).orderBy('criadoEm', 'desc').first());
@@ -177,7 +194,9 @@ planosRoutes.post(
     const u = await db('usuario').where({ id: req.user!.id }).first();
     if (isentoDeCobranca(u))
       throw new AppError(
-        'Sua conta já tem o plano Master sem cobrança e não pode ser assinada.',
+        cortesiaAtiva(u)
+          ? 'Sua conta está em cortesia sem cobrança. A assinatura fica disponível quando a cortesia terminar.'
+          : 'Sua conta já tem o plano Master sem cobrança e não pode ser assinada.',
         409,
         undefined,
         'PLANO_ISENTO',
@@ -289,7 +308,9 @@ const tokenConfere = (recebido: string | undefined) => {
  */
 export function assinaturaDoEvento(corpo: any): string | null {
   const evento = String(corpo?.event ?? '');
-  const id = corpo?.payment?.subscription ?? (evento.startsWith('SUBSCRIPTION_') ? corpo?.subscription?.id : null);
+  const id =
+    corpo?.payment?.subscription ??
+    (evento.startsWith('SUBSCRIPTION_') ? corpo?.subscription?.id : null);
   return id ? String(id) : null;
 }
 
@@ -300,7 +321,9 @@ webhookRoutes.post('/asaas', async (req, res) => {
   const { id, event } = (req.body ?? {}) as { id?: string; event?: string };
   if (!id || !event) throw AppError.unprocessable('Evento sem id ou tipo');
   const remota = assinaturaDoEvento(req.body);
-  const nossa = remota ? await db('assinatura').where({ asaasAssinaturaId: remota }).first('id') : null;
+  const nossa = remota
+    ? await db('assinatura').where({ asaasAssinaturaId: remota }).first('id')
+    : null;
   if (!nossa) {
     res.json({ recebido: true, ignorado: true }); // de outro sistema na mesma conta Asaas
     return;
@@ -428,4 +451,55 @@ export async function verificarAssinaturas(agora = new Date()) {
     if (await rebaixar(a.usuarioId, 'assinatura cancelada e período pago encerrado')) rebaixadas++;
   }
   return { rebaixadas };
+}
+
+/** Dias antes do fim da cortesia em que o usuário é avisado */
+export const AVISO_CORTESIA_DIAS = 7;
+
+/**
+ * Tarefa periódica: avisa 7 dias antes e, vencida a cortesia, volta a conta para o Free (a menos que haja
+ * uma assinatura paga em dia). Usa plano_aviso_dias para não repetir o aviso.
+ */
+export async function expirarCortesias(agora = new Date()) {
+  const candidatos = await db('usuario')
+    .whereNot({ plano: 'FREE' })
+    .where({ planoVitalicio: false })
+    .whereNotNull('planoCortesiaAte')
+    .select('id', 'nome', 'email', 'plano', 'planoCortesiaAte', 'planoAvisoDias');
+  let avisadas = 0;
+  let encerradas = 0;
+  for (const u of candidatos) {
+    const fim = new Date(u.planoCortesiaAte);
+    if (fim <= agora) {
+      await db('usuario')
+        .where({ id: u.id })
+        .update({ planoCortesiaAte: null, planoAvisoDias: null });
+      if (await rebaixar(u.id, 'fim do período de cortesia', agora)) encerradas++;
+      continue;
+    }
+    const dias = Math.ceil((fim.getTime() - agora.getTime()) / 86_400_000);
+    if (dias <= AVISO_CORTESIA_DIAS && u.planoAvisoDias !== AVISO_CORTESIA_DIAS) {
+      await db('usuario').where({ id: u.id }).update({ planoAvisoDias: AVISO_CORTESIA_DIAS });
+      const data = fim.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const nome = NOME[u.plano as PlanoPago];
+      await notificar(
+        [u.id],
+        'PLANO_EXPIRANDO',
+        `Sua cortesia do plano ${nome} termina em ${data}`,
+        {
+          expiraEm: fim,
+        },
+      );
+      await enviarEmail(
+        u.email,
+        `Konektron Research: sua cortesia do plano ${nome} termina em ${dias} dia(s)`,
+        `Olá, ${u.nome}.
+
+Sua cortesia do plano ${nome} termina em ${data}. Depois disso a conta passa ao plano Free. ` +
+          `Para continuar com o ${nome}, assine em ${env.APP_URL}/planos`,
+      );
+      avisadas++;
+    }
+  }
+  return { avisadas, encerradas };
 }

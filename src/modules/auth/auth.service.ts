@@ -17,7 +17,7 @@ export const BCRYPT_CUSTO = 12; // RNF04
 
 export const usuarioPublico = (u: any) => {
   // a opção "vitalício" e as datas do ciclo do plano gratuito são internas (só o administrador vê)
-  const { senhaHash: _s, planoVitalicio: _v, planoLimiteEm: _l, planoBloqueadoEm: _b, planoAvisoDias: _a, asaasClienteId: _c, descontoEstudante: _d, cpfCnpj: _cpf, ...resto } = u;
+  const { senhaHash: _s, planoVitalicio: _v, planoCortesiaAte: _ct, planoLimiteEm: _l, planoBloqueadoEm: _b, planoAvisoDias: _a, asaasClienteId: _c, descontoEstudante: _d, cpfCnpj: _cpf, ...resto } = u;
   return resto;
 };
 

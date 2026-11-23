@@ -16,6 +16,8 @@ import { notificar } from '#services/notificacoes.ts';
  * - Limites por plano: membros por projeto (além do responsável) e espaço para arquivos enviados.
  * - MASTER: tudo liberado. Administradores são sempre MASTER.
  * - Vitalício (opção interna, só o administrador vê): o plano escolhido não expira nem é cobrado.
+ * - Cortesia (opção interna): o plano escolhido vale sem cobrança até `planoCortesiaAte`; depois a conta volta
+ *   ao Free pela tarefa periódica (expirarCortesias, em assinaturas.ts).
  *
  * Os recursos de um projeto seguem o plano de quem o criou: o membro convidado usa o que o projeto tem.
  */
@@ -86,9 +88,16 @@ type UsuarioPlano = {
   perfilGlobal: string;
   plano: Plano;
   planoVitalicio: boolean;
+  planoCortesiaAte?: Date | string | null;
   planoLimiteEm: Date | string | null;
   planoBloqueadoEm: Date | string | null;
 };
+
+/** Cortesia ainda em vigor (plano pago sem cobrança até a data) */
+export const cortesiaAtiva = (
+  u: { plano?: string; planoCortesiaAte?: Date | string | null } | undefined,
+  agora = new Date(),
+) => !!u?.planoCortesiaAte && u.plano !== 'FREE' && new Date(u.planoCortesiaAte) > agora;
 
 export const planoEfetivo = (u: Pick<UsuarioPlano, 'perfilGlobal' | 'plano'>): Plano =>
   u.perfilGlobal === 'ADMIN' ? 'MASTER' : (u.plano ?? 'FREE');
@@ -114,7 +123,15 @@ export async function projetosCriados(usuarioId: string, trx?: Trx) {
 const carregar = async (usuarioId: string, trx?: Trx): Promise<UsuarioPlano> => {
   const u = await (trx ?? db)('usuario')
     .where({ id: usuarioId })
-    .first('id', 'perfilGlobal', 'plano', 'planoVitalicio', 'planoLimiteEm', 'planoBloqueadoEm');
+    .first(
+      'id',
+      'perfilGlobal',
+      'plano',
+      'planoVitalicio',
+      'planoCortesiaAte',
+      'planoLimiteEm',
+      'planoBloqueadoEm',
+    );
   if (!u) throw AppError.notFound('Usuário');
   return u;
 };
@@ -140,6 +157,8 @@ export async function resumoPlano(usuarioId: string) {
     projetosUsados: usados,
     podeCriarProjeto: !bloqueado && (limiteProjetos === null || usados < limiteProjetos),
     expiraEm: expiraEm(u),
+    /** fim da cortesia (plano sem cobrança); depois a conta volta ao Free */
+    cortesiaAte: cortesiaAtiva(u) ? new Date(u.planoCortesiaAte!) : null,
     bloqueado,
     recursos,
   };
@@ -279,17 +298,22 @@ export async function reservarVagaDeProjeto(usuarioId: string, trx: Trx) {
 /**
  * Troca de plano (administração hoje; webhook do Asaas depois). Sair do FREE (ou virar vitalício) desfaz
  * o bloqueio e devolve da lixeira os projetos removidos pela expiração; voltar ao FREE com o limite já
- * atingido recomeça a contagem dos 3 meses.
+ * atingido recomeça a contagem dos 3 meses. Toda troca encerra a cortesia, a menos que venha uma nova data
+ * em `planoCortesiaAte` (só com plano pago).
  */
 export async function mudarPlano(
   usuarioId: string,
-  novo: { plano?: Plano; planoVitalicio?: boolean },
+  novo: { plano?: Plano; planoVitalicio?: boolean; planoCortesiaAte?: Date | null },
 ) {
   return db.transaction(async (trx) => {
     const u = await carregar(usuarioId, trx);
     const plano = novo.plano ?? u.plano;
     const vitalicio = novo.planoVitalicio ?? u.planoVitalicio;
-    const dados: Record<string, unknown> = { plano, planoVitalicio: vitalicio };
+    const dados: Record<string, unknown> = {
+      plano,
+      planoVitalicio: vitalicio,
+      planoCortesiaAte: plano !== 'FREE' && !vitalicio ? (novo.planoCortesiaAte ?? null) : null,
+    };
     if (plano !== 'FREE' || vitalicio) {
       if (u.planoBloqueadoEm) {
         await trx('projeto')

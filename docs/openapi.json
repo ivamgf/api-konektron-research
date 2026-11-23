@@ -200,6 +200,14 @@
                   "planoVitalicio": {
                     "type": "boolean"
                   },
+                  "planoCortesiaAte": {
+                    "anyOf": [
+                      {},
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "descontoEstudante": {
                     "type": "boolean"
                   }
